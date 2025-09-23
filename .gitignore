@@ -1,0 +1,8 @@
+
+results/**
+data/**
+*.html
+*.png
+scripts/*cache/**
+scripts/*files/**
+.DS_store

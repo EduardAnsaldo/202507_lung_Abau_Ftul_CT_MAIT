@@ -1,0 +1,698 @@
+---
+title: TCR Analysis MAITs and DNs Abau infection B2m-Fl
+author: Eduard Ansaldo
+date: '`r Sys.Date()`'
+verbose: false
+engine: knitr
+knitr:
+  opts_chunk:
+    echo: false
+    warning: false
+    message: false
+    error: false
+    cache: false
+    results: markdown
+    code-fold: true
+processing: true
+gProfiler: false
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-depth: 3
+    toc-expand: 1
+    toc-location: left
+    toc-title: Table of Contents
+    toc-collapse: true
+    page-layout: full
+    fig-width: 7
+    fig-height: 7
+    fig-align: center
+jupyter:
+  kernelspec:
+    display_name: R
+    language: R
+    name: r
+---
+
+
+::: {.content-visible when-meta="verbose"}
+# Initialization
+:::
+
+```{r}
+# General R and plotting 
+library(tidyverse)
+library(ggplot2)
+library(scales)
+library(patchwork)
+library(cowplot)
+library(gridExtra)
+library(ggrepel)
+library(stringr)
+library(VennDiagram)
+library(pheatmap)
+library(viridis)
+library(here)
+library(knitr)
+
+# Single Cell Analysis Packages
+library(Seurat)
+library(scRepertoire)
+library(immunarch)
+library(circlize)
+library(scCustomize)
+library(SingleR)
+library(celldex)
+library(UCell)
+# library(scplotter)
+
+# DEG, pathway enrichment and visualization packages
+library(DESeq2)
+library(clusterProfiler)
+library(DOSE)
+library(pathview)
+library(org.Mm.eg.db)
+library(scRepertoire)
+library(enrichplot)
+library(msigdbr)
+library(gprofiler2)
+```
+
+```{r}
+#| results: hide 
+# Setting working directory and seed
+set.seed(3514)
+i_am('TCR_Analysis_merged_integrated.qmd')
+here()
+results_path <- here('results/')
+dir.create(results_path)
+results_path <- here('results/Integrated_object/')
+dir.create(results_path)
+results_path <- here('results/Integrated_object/TCR_repertoire_analysis/')
+dir.create(results_path)
+figures_path <- here(results_path, 'figures/')
+dir.create(figures_path)
+data_path <- here('data/')
+dir.create(data_path)
+tables_path <- here(results_path, 'tables/')
+dir.create(tables_path)
+
+diverging_palette <- hcl.colors(n = 20,'Purple-Green',rev = T)
+sequential_palette_dotplot <- hcl.colors(n = 20,'YlGn',rev = T)
+sequential_palette <- hcl.colors(n = 20,'Mako',rev = T)
+
+source(here('scripts', 'circlize_functions.r'))
+
+```
+
+
+:::{.content-visible when-meta='verbose'}
+## Read in Data
+:::
+
+```{r}
+seurat <- readRDS(file = here('data', 'Merged_object_integrated.rds'))
+```
+
+# TCR repertoire preprocessing
+
+Since clonal frequencies were calculated prior to filtering the contaminating T cell clusters, they are incorrect, am readding the data here from scratch.
+
+```{r}
+# Re-adding VDJ data
+contigs_MAIT <- read.csv(here('cluster', 'processing', 'MAIT_filtered_contig_annotations.csv'))
+contigs_MAIT <- contigs_MAIT |> mutate(barcode = str_c(sample, '_', barcode))
+
+contigs_abDN <- read.csv(here('cluster', 'processing', 'abDN_filtered_contig_annotations.csv'))
+contigs_abDN <- contigs_abDN |> mutate(barcode = str_c(sample, '_', barcode))
+
+contigs <- rbind(contigs_MAIT, contigs_abDN)
+
+#Demultiplexing VDJ libraries
+contig_list <- createHTOContigList(contigs, seurat, group.by = "Samples")
+contig_list <- contig_list[c(levels(seurat$Samples))]
+
+# Combining the Contigs
+combined <- combineTCR(contig_list, removeNA = TRUE, samples=c(levels(seurat$Samples)), filterMulti = TRUE)
+
+# #Adding Samples as variables
+combined <- addVariable(combined, variable.name='Samples', variables=c(levels(seurat$Samples)))                                    
+
+## Integrating data with seurat object
+cell_names <- Cells(seurat)
+groups_merge <- pull(seurat@meta.data, Samples)
+
+#Changing barcodes on the seurat object for the merge with VDJ data
+new_cell_names <- paste(groups_merge, cell_names, sep='_')
+seurat$barcode <- cell_names
+seurat <- RenameCells(seurat, new.names=new_cell_names)
+
+# #Combining VDJ and Seurat Object
+seurat <- combineExpression(combined, seurat, proportion = TRUE, cloneCall='aa', group.by='Samples', chain = 'both')
+# Renaming cells back to original barcodes
+seurat <- RenameCells(seurat, new.names=seurat$barcode)
+
+```
+
+# TCR repertoire Analysis
+
+## Clonotype Frequency
+
+```{r}
+#| layout-ncol: 2
+#| fig.width: 8
+#| fig.height: 8
+table(seurat$cloneSize)
+#UMAP clonotype frequency
+slot(seurat, "meta.data")$cloneSize <- factor(slot(seurat, "meta.data")$cloneSize, 
+                levels = c(
+                           "Small (1e-04 < X <= 0.001)",
+                            'Medium (0.001 < X <= 0.01)', 
+                            # 'Hyperexpanded (0.1 < X <= 1)',
+                                                        NA)) 
+DimPlot_scCustom(seurat, group.by = "cloneSize", pt.size = 0.5, order=T, colors_use = viridis(length(levels(seurat$cloneSize)))) 
+ggsave(filename = 'UMAP_VDJ_clone_frequencies.pdf', path = figures_path, width = 8, height = 8)
+DimPlot_scCustom(seurat, group.by = "cloneSize", pt.size = 0.5, order=T, colors_use = viridis(length(levels(seurat$cloneSize))), split.by = 'Groups')
+ggsave(filename = 'UMAP_VDJ_clone_frequencies_by_group.pdf', path = figures_path, width = 8, height = 8)  
+```
+
+```{r}
+#| fig-width: 9
+#| fig-height: 6
+DimPlot_scCustom(seurat, group.by = "cloneSize", pt.size = 0.5, order=T, colors_use = viridis(length(levels(seurat$cloneSize))), split.by = 'Samples', num_columns = 4)& theme(text = element_text(size = 7))
+ggsave(filename = 'UMAP_VDJ_clone_frequencies_by_sample.pdf', path = figures_path, width = 9, height = 6)
+```
+
+:::{.content-visible when-meta='verbose'}
+## Parsing alpha and beta gene usage
+:::
+
+```{r}
+#| fig.width: 8
+#| fig.height: 8
+
+# Checking for full TCR sequences
+seurat@meta.data <- seurat@meta.data |>
+    mutate(TCR_exists = ifelse(is.na(CTaa), 'NO', 'YES'),
+        TCR_full = ifelse(str_detect(CTaa, '_NA') | str_detect(CTaa, 'NA_'), 'NO', 'YES'))
+#scRNAseq_test <- subset(seurat, subset = TCR_full == 'YES')
+print('Number of total cells: ')
+seurat@meta.data  |> nrow()
+print('Number of cells with either TCR sequence: ')
+seurat@meta.data |> filter(TCR_exists == 'YES') |> nrow()
+print('Number of cells with full TCR sequences detected: ')
+seurat@meta.data |> filter(TCR_full == 'YES') |> nrow()
+
+# Extracting the TCR alpha chain
+local_dataframe <- seurat@meta.data |> dplyr::select(starts_with('CT')) 
+local_dataframe <- local_dataframe |>
+                            separate_wider_delim(CTgene,delim = '_',names = c('CT_alpha', 'CT_beta'), cols_remove = FALSE)  |>
+                            separate_wider_delim(CT_alpha,delim = '.',names = c('CT_V_alpha', 'CT_J_alpha', NA), cols_remove = FALSE, too_many = 'drop')  |>
+                            mutate(CT_alpha_final = str_c(CT_V_alpha, '_', CT_J_alpha))
+seurat$CT_alpha_final <- pull(local_dataframe, CT_alpha_final)
+
+
+# Extracting the TCR beta chain
+local_dataframe <- seurat@meta.data |> dplyr::select(starts_with('CT')) 
+local_dataframe <- local_dataframe |>
+                            separate_wider_delim(CTgene,delim = '_',names = c('CT_alpha', 'CT_beta'), cols_remove = FALSE)  |>
+                            separate_wider_delim(CT_beta,delim = '.',names = c('CT_V_beta', 'CT_J_beta', NA), cols_remove = FALSE, too_many = 'drop')  |>
+                            mutate(CT_beta_final = str_c(CT_V_beta, '_', CT_J_beta))
+seurat$CT_beta_final <- pull(local_dataframe, CT_beta_final)
+
+
+# for (column in seurat@meta.data |> dplyr::select(starts_with('CT'))) {
+#     print(colnames(column))
+#     print(length(column))
+# }
+```
+
+## Annotating known invariant TCRs
+
+### iNKTs (TRAV11_TRAJ18)
+
+```{r}
+#| layout-ncol: 2
+#| fig.width: 8
+#| fig.height: 8
+
+Idents(seurat) <- 'CT_alpha_final'
+seurat@meta.data <- mutate(seurat@meta.data, highlight=ifelse(CT_alpha_final == "TRAV11_TRAJ18", 'TRAV11_TRAJ18', 'Other'))
+
+seurat$highlight <- factor(seurat$highlight, levels=c('Other','TRAV11_TRAJ18'))
+
+DimPlot_scCustom(seurat, group.by = "highlight", order = T, pt.size = 1, colors_use = hcl.colors(n = 2, palette = 'ag_GrnYl')) + ggtitle('iNKTs (TRAV11_TRAJ18)')
+ggsave(filename = 'UMAP_VDJ_iNKTs.pdf', width = 6, height = 5, path = figures_path)
+DimPlot_scCustom(seurat, group.by = "highlight", order = T, pt.size = 1, colors_use = hcl.colors(n = 2, palette = 'ag_GrnYl'), split.by = 'Groups') & labs(color = 'iNKT TCR')
+ggsave(filename = 'UMAP_VDJ_iNKTs_by_group.pdf', width = 8, height = 8, path = figures_path)
+```
+
+### MAITs (TRAV1_TRAJ33)
+
+```{r}
+#| layout-ncol: 2
+#| fig.width: 8
+#| fig.height: 8
+
+#MAITs
+Idents(seurat) <- 'CT_alpha_final'
+seurat@meta.data <- mutate(seurat@meta.data, highlight_MAIT=ifelse(CT_alpha_final == "TRAV1_TRAJ33", 'TRAV1_TRAJ33', 'Other'))
+
+seurat$highlight_MAIT <- factor(seurat$highlight_MAIT, levels=c('Other','TRAV1_TRAJ33'))
+DimPlot_scCustom(seurat, group.by = "highlight_MAIT", order = T, pt.size = 1, colors_use = hcl.colors(n = 2, palette = 'ag_GrnYl')) + ggtitle('MAIT TCR (TRAV1_TRAJ33)') + labs(color = 'MAIT TCR')
+ggsave(filename = 'UMAP_VDJ_MAIT.pdf', width = 6, height = 5, path = figures_path)
+DimPlot_scCustom(seurat, group.by = "highlight_MAIT", order = T, pt.size = 1, colors_use = hcl.colors(n = 2, palette = 'ag_GrnYl'), split.by = 'Groups') & labs(color = 'MAIT TCR')
+ggsave(filename = 'UMAP_VDJ_MAIT_by_group.pdf', width = 8, height = 8, path = figures_path)  
+```
+
+```{r}
+DimPlot_scCustom(seurat, group.by = "highlight_MAIT", order = T, pt.size = 1, colors_use = hcl.colors(n = 2, palette = 'ag_GrnYl'), split.by = 'Samples', num_columns = 4) & labs(color = 'MAIT TCR') & theme(text = element_text(size = 7))
+ggsave(filename = 'UMAP_VDJ_MAIT_by_sample.pdf', width = 8, height = 8, path = figures_path)
+```
+
+
+### QFLs (TRAV9D-3_TRAJ21)
+
+```{r}
+#| fig.width: 8
+#| fig.height: 8
+
+#QFL
+Idents(seurat) <- 'CT_alpha_final'
+seurat@meta.data <- mutate(seurat@meta.data, highlight_QFL=ifelse(CT_alpha_final == "TRAV9D-3_TRAJ21", 'TRAV9D-3_TRAJ21', 'Other'))
+
+seurat$highlight_QFL <- factor(seurat$highlight_QFL, levels=c('Other','TRAV9D-3_TRAJ21'))
+DimPlot_scCustom(seurat, group.by = "highlight_QFL", order = T, pt.size = 1, colors_use = hcl.colors(n = 2, palette = 'ag_GrnYl')) + ggtitle('QFL TCR (TRAV9D-3_TRAJ21)')
+ggsave(filename = 'UMAP_VDJ_QFL.pdf', width = 8, height = 5, path = figures_path)
+DimPlot_scCustom(seurat, group.by = "highlight_QFL", order = T, pt.size = 1, colors_use = hcl.colors(n = 2, palette = 'ag_GrnYl'), split.by = 'Groups') & labs(color = 'QFL TCR')
+
+ggsave(filename = 'UMAP_VDJ_QFL_by_group.pdf', width = 8, height = 8, path = figures_path)
+```
+
+## Repertoire Diversity
+
+### D50 diversity measure
+
+```{r}
+#| output: false
+#Extracting TCR data for clusters of interest
+Idents(seurat) <- 'Origin'
+combined2 <- scRepertoire:::.expression2List(seurat, split.by ='ident')
+
+cell_types <- unique(seurat$Origin)
+
+#Initiating results data frame
+results <- as.data.frame(matrix(nrow = 0,ncol = length(cell_types)))
+# colnames(results)
+rnames <- c()
+
+#Calculate D50
+for (HTO in unique(seurat$Groups)) {
+    
+    result <- c()
+
+    for (cell_type in cell_types) {
+        
+        #Extracting data for cell type and HTO
+        cell_type_HTO_data <- combined2[[cell_type]]|>
+                                    filter(Groups == HTO) |>
+                                    dplyr::select(c('Groups', 'CTaa')) |>
+                                    add_count(CTaa, sort=TRUE)
+
+        #Calculating D50
+        if (nrow(cell_type_HTO_data) < 20) {
+            D50 <- NA 
+        } else {
+            L50 <- floor(nrow(cell_type_HTO_data)/2)
+            number_unique_50 <- cell_type_HTO_data[1:L50,] %>% summarise(n_distinct(CTaa)) %>% as.numeric()
+            number_unique_total <- cell_type_HTO_data[] %>% summarise(n_distinct(CTaa)) %>% as.numeric()
+            D50 <- number_unique_50/number_unique_total
+        }
+        result <- c(result, D50)
+        names <- c(names, cell_type)
+    }
+    results <- rbind(results, result)
+    rnames <- c(rnames, HTO)
+    print(HTO)
+
+}
+colnames(results) <- paste0(cell_types, '_D50')
+results <- results %>% mutate(Mouse=rnames) %>% arrange(Mouse) |> relocate(Mouse)
+
+write.csv(results, file=paste0(results_path, 'D50_per_major_cell_type.csv'), row.names=FALSE)
+head(results)
+```
+
+```{r}
+# Convert results to long format for plotting
+results_long <- results %>%
+    pivot_longer(-Mouse, names_to = "cell_type", values_to = "D50")
+
+# Remove NA values for plotting
+results_long <- results_long %>% filter(!is.na(D50))
+
+# Plot: x axis is Mouse, show only dots (no columns)
+ggplot(results_long, aes(x = Mouse, y = D50, color = cell_type)) +
+    geom_jitter(width = 0.15, size = 2, show.legend = TRUE) +
+    theme_minimal() +
+    labs(x = "Mouse", y = "D50 Diversity", title = "D50 per Group by Origin") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        text = element_text(size = 14),
+          axis.line = element_line(colour = "black")) +
+    scale_y_continuous(limits = c(0, 0.5))
+ggsave(filename = paste0(figures_path, 'D50_per_origin.pdf'))
+```
+
+```{r}
+#| output: false
+#Extracting TCR data for clusters of interest
+Idents(seurat) <- 'cell_types'
+combined2 <- scRepertoire:::.expression2List(seurat, split.by ='ident')
+
+cell_types <- levels(seurat$cell_types)
+
+#Initiating results data frame
+results <- as.data.frame(matrix(nrow = 0,ncol = length(cell_types)))
+# colnames(results)
+rnames <- c()
+
+#Calculate D50
+for (HTO in unique(seurat$Groups)) {
+    
+    result <- c()
+    names <- c()
+
+    for (cell_type in cell_types) {
+        
+        names <- c(names, cell_type)
+        
+        #Extracting data for cell type and HTO
+        cell_type_HTO_data <- combined2[[cell_type]]|>
+                                    filter(Groups == HTO) |>
+                                    dplyr::select(c('Groups', 'CTaa')) |>
+                                    add_count(CTaa, sort=TRUE)
+
+        #Calculating D50
+        if (nrow(cell_type_HTO_data) < 20) {
+            D50 <- NA 
+        } else {
+            L50 <- floor(nrow(cell_type_HTO_data)/2)
+            number_unique_50 <- cell_type_HTO_data[1:L50,] %>% summarise(n_distinct(CTaa)) %>% as.numeric()
+            number_unique_total <- cell_type_HTO_data[] %>% summarise(n_distinct(CTaa)) %>% as.numeric()
+            D50 <- number_unique_50/number_unique_total
+        }
+        result <- c(result, D50)
+        names(result) <- names
+    }
+    results <- rbind(results, result)
+    rnames <- c(rnames, HTO)
+    print(HTO)
+
+}
+
+# print(rnames)
+# nrow(results)
+colnames(results) <- paste0(cell_types, '_D50')
+# colnames(results)
+
+results <- results %>% mutate(Mouse=rnames) %>% arrange(Mouse) |> relocate(Mouse)
+results
+
+write.csv(results, file=paste0(results_path, 'D50_per_cell_type.csv'), row.names=FALSE)
+```
+
+```{r}
+# Convert results to long format for plotting
+results_long <- results %>%
+    pivot_longer(-Mouse, names_to = "cell_type", values_to = "D50")
+
+# Remove NA values for plotting
+results_long <- results_long %>% filter(!is.na(D50))
+
+# Plot: x axis is Mouse, show only dots (no columns)
+ggplot(results_long, aes(x = Mouse, y = D50, color = cell_type)) +
+    geom_jitter(width = 0.15, size = 2, show.legend = TRUE) +
+    theme_minimal() +
+    labs(x = "Mouse", y = "D50 Diversity", title = "D50 per Group by Cell Type") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        text = element_text(size = 14),
+          axis.line = element_line(colour = "black")) +
+    scale_y_continuous(limits = c(0, 0.5)) 
+    # scale_color_manual(values = color_palette)
+```
+
+```{r}
+#| include: false
+#| vscode: {languageId: r}
+# #Extracting TCR data for clusters of interest
+# Idents(scRNAseq) <- 'cell_types'
+# combined2 <- scRepertoire:::.expression2List(scRNAseq, split.by ='ident')[
+
+# diversity_measure_results <- clonalDiversity(combined2, cloneCall = 'aa', exportTable = T, n.boots = 100)
+# #diversity_measure_results <- diversity_measure_results |>
+#     #separate_wider_delim(Group, '_', names = c('cell_type', 'Sample'))
+# write.csv(diversity_measure_results, file=paste0(path, 'diversity_measure_results.csv'), row.names=T)
+```
+
+
+## Overlap Analysis 
+
+### Morisita Overlap Index of all cells
+
+
+```{r}
+immunarch_table <- exportClones(seurat, format = 'immunarch', write.file = FALSE, group.by = 'Samples')
+overlap <- repOverlap(immunarch_table$data, .method = 'morisita', .verbose=FALSE)
+vis(overlap) + ggtitle('Morisita overlap index')
+ggsave(filename = paste0(figures_path, 'morisita_overlap.pdf'))
+
+
+combined2 <- scRepertoire:::.expression2List(seurat, split.by ='Samples')
+morisita_table <- clonalOverlap(combined2, cloneCall = 'aa', chain = 'both',exportTable = T,method = 'morisita')
+write.csv(morisita_table, file = paste0(results_path, 'morisita_table.csv'))
+```
+
+### Morisita Overlap Index of cell types
+
+```{r}
+#| fig-width: 10
+#| fig-height: 8
+immunarch_table <- exportClones(seurat, format = 'immunarch', write.file = FALSE, group.by = 'cell_types')
+overlap <- repOverlap(immunarch_table$data, .method = 'morisita', .verbose=FALSE)
+vis(overlap) + ggtitle('Morisita overlap index') + labs(x = NULL, y = NULL)
+ggsave(filename = paste0(figures_path, 'morisita_overlap_cell_types.pdf'), width = 10, height = 8)
+
+combined2 <- scRepertoire:::.expression2List(seurat, split.by ='cell_types')
+morisita_table <- clonalOverlap(combined2, cloneCall = 'aa', chain = 'both',exportTable = T,method = 'morisita')
+write.csv(morisita_table, file = paste0(results_path, 'morisita_table_cell_types.csv'))
+```
+
+########## Continue Here 08/21/25 ##########
+
+### Overlap Coefficient Index of all cells
+
+```{r}
+immunarch_table <- exportClones(seurat, format = 'immunarch', write.file = FALSE, group.by = 'Samples')
+overlap <- repOverlap(immunarch_table$data, .method = 'overlap', .verbose=FALSE)
+vis(overlap) + ggtitle('Overlap Coefficient')
+ggsave(filename = paste0(figures_path, 'overlap_coefficient.pdf'))
+
+combined2 <- scRepertoire:::.expression2List(seurat, split.by ='Samples')
+overlap_coefficient <- clonalOverlap(combined2, cloneCall = 'aa', chain = 'both',exportTable = T,method = 'overlap')
+write.csv(overlap_coefficient, file = paste0(results_path, 'overlap_coefficient.csv'))
+```
+
+### Overlap Coefficient Index of cell types
+
+```{r}
+#| vscode: {languageId: r}
+immunarch_table <- exportClones(seurat, format = 'immunarch', write.file = FALSE, group.by = 'cell_types')
+overlap <- repOverlap(immunarch_table$data, .method = 'overlap', .verbose=FALSE)
+vis(overlap) + ggtitle('Overlap coefficient')
+ggsave(filename = paste0(figures_path, 'overlap_coefficient_cell_types.pdf'))
+
+
+combined2 <- scRepertoire:::.expression2List(seurat, split.by ='Samples')
+overlap_coefficient <- clonalOverlap(combined2, cloneCall = 'aa', chain = 'both',exportTable = T,method = 'overlap')
+write.csv(overlap_coefficient, file = paste0(results_path, 'overlap_coefficient_overlap_coefficient_cell_types.csv'))
+```
+
+## Visualizing Clonal Overlap: Circos plots
+
+### Overlap Between Samples
+
+```{r}
+#| results: hide
+color_palette <-c(
+        "MAIT-B2m-Cre--uninfected"  =  'skyblue1', 
+        "MAIT-B2m-Cre+-uninfected"  =  'skyblue3', 
+        "MAIT-B2m-Cre--Abau"  =  'slateblue1',       
+        "MAIT-B2m-Cre+-Abau"  =  'slateblue3',       
+        "abDN-B2m-Cre--uninfected"  =  'wheat1', 
+        "abDN-B2m-Cre+-uninfected"  =  'wheat3', 
+        "abDN-B2m-Cre--Abau"  =  'tan1',       
+        "abDN-B2m-Cre+-Abau"  =  'tan3')        
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+grouping_variable <- 'Samples'
+variables_to_color_by <- NULL
+
+overlap_circos_and_tables(
+    seurat,
+    grouping_variable = 'Samples',
+    results_path = results_path,
+    variables_to_color_by = NULL,
+    cell_types_column = 'cell_types',
+    write_table = TRUE,
+    figures_path = figures_path,
+    circle_margin = 1,
+    major_ticks = 200,
+    cex = 0.6,
+    samples = levels(seurat$Samples),
+    groups = levels(seurat$Groups),
+    color_palette = color_palette)
+```
+
+```{r}
+#| fig-height: 6
+path <- paste0(figures_path, 'Circos_clonotypes_per_', grouping_variable, '.png')
+knitr::include_graphics(path, dpi = 100)
+```
+
+### Overlap Between cell types
+
+```{r}
+#| results: hide 
+color_palette <-c(
+        "MAIT-B2m-Cre--uninfected"  =  'skyblue1', 
+        "MAIT-B2m-Cre+-uninfected"  =  'skyblue3', 
+        "MAIT-B2m-Cre--Abau"  =  'slateblue1',       
+        "MAIT-B2m-Cre+-Abau"  =  'slateblue3',       
+        "abDN-B2m-Cre--uninfected"  =  'wheat1', 
+        "abDN-B2m-Cre+-uninfected"  =  'wheat3', 
+        "abDN-B2m-Cre--Abau"  =  'tan1',       
+        "abDN-B2m-Cre+-Abau"  =  'tan3')        
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+grouping_variable <- 'cell_types'
+variables_to_color_by <- NULL
+
+TCR_data <- overlap_circos_and_tables(
+    seurat,
+    grouping_variable = grouping_variable,
+    results_path = results_path,
+    variables_to_color_by = NULL,
+    cell_types_column = 'cell_types',
+    write_table = TRUE,
+    figures_path = figures_path,
+    circle_margin = 1,
+    major_ticks = 200,
+    cex = 0.6,
+    samples = levels(seurat$cell_types),
+    groups = levels(seurat$cell_types),
+    color_palette = NULL)
+```
+
+```{r}
+#| fig-height: 6
+path <- paste0(figures_path, 'Circos_clonotypes_per_', grouping_variable, '.png') 
+knitr::include_graphics(path, dpi = 100)
+```
+## Gene usage analysis
+
+### TRBV gene usage
+
+```{r}
+#| fig-width: 10
+#| fig-height: 12
+combined2 <- scRepertoire:::.expression2List(seurat, split.by ='cell_types')
+
+vizGenes(combined2,
+         x.axis = "TRBV",
+         y.axis = NULL, # No specific y-axis variable, will group all samples
+         plot = "barplot",
+         summary.fun = "percent") + theme(text = element_text(size = 10))
+
+ggsave(filename = paste0(figures_path, 'TRBV_gene_usage_per_cell_type.pdf'), width = 12, height = 18)
+
+combined4 <- scRepertoire:::.expression2List(seurat, split.by ='Samples')
+
+vizGenes(combined4,
+         x.axis = "TRBV",
+         y.axis = NULL, # No specific y-axis variable, will group all samples
+         plot = "barplot",
+         summary.fun = "percent") + theme(text = element_text(size = 10
+         ))
+
+ggsave(filename = paste0(figures_path, 'TRBV_gene_usage_per_samples.pdf'), width = 12, height = 18)
+```
+
+### TRBV TRBJ gene parings
+
+```{r}
+#| fig-width: 12
+#| fig-height: 16
+vizGenes(combined4,
+         x.axis = "TRBV",
+         y.axis = "TRBJ",
+         plot = "heatmap",
+         summary.fun = "percent") # Display percentages
+
+ggsave(filename = paste0(figures_path, 'TRBV_TRBJ_gene_pairings.pdf'), width = 12, height = 16)
+```
+
+### TRAV gene usage
+
+```{r}
+#| fig-width: 16
+#| fig-height: 14
+
+
+vizGenes(combined4,
+         x.axis = "TRAV",
+         y.axis = NULL, # No specific y-axis variable, will group all samples
+         plot = "barplot",
+         summary.fun = "percent") 
+
+ggsave(filename = paste0(figures_path, 'TRAV_gene_usage_barplot.pdf'), width = 22, height = 18)
+```
+
+### TRAV TRAJ gene parings
+
+```{r}
+#| fig-width: 20
+#| fig-height: 30
+#| fig.width: 12
+vizGenes(combined4,
+         x.axis = "TRAV",
+         y.axis = "TRAJ",
+         plot = "heatmap",
+         summary.fun = "percent")
+
+ggsave(filename = paste0(figures_path, 'TRAV_TRAJ_pairings_heatmap.pdf'), width = 20, height = 30)
+```
+
+## Expanded Clonotypes
+
+### Top  expanded clonotypes
+
+Please note the clonotypes are defined at the level of the Amino Acid CDR3 region only. 
+
+
+```{r}
+#| vscode: {languageId: r}
+head(TCR_data, n = 30) |> knitr::kable()
+```
+
+# Conclusions
+
+TBD, we will wait for the new sequencing data.
+
+
