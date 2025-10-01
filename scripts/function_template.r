@@ -418,8 +418,8 @@ pseudobulk <- function (scRNAseq, comparison, group1, group2, cluster='all_clust
             ) &(log2FoldChange >= FC_threshold |
                 log2FoldChange <= -1 * FC_threshold)) |> 
         arrange(padj)
-    results_filtered_UP <- filter(results_filtered, log2FoldChange >  FC_threshold) 
-    results_filtered_DOWN <- filter(results_filtered, log2FoldChange <  FC_threshold)
+    results_filtered_UP <- filter(results_filtered, log2FoldChange >=  FC_threshold) 
+    results_filtered_DOWN <- filter(results_filtered, log2FoldChange <=  -1*FC_threshold)
 
     # Write results to CSV files
     write.csv(results |> arrange(padj), file= here(gene_lists_path, paste('ALL_GENES_DEG_Analysis', cluster, 'pseudobulk', group2, 'vs', group1, '.csv', sep='_')))
@@ -524,9 +524,9 @@ DEG_FindMarkers_RNA_assay <- function (scRNAseq, comparison, group1, group2, clu
                     left_join(y= unique(annotations[,c('gene_name', 'description')]),
                         by = c('genes' = 'gene_name')) |>
                     left_join(y = counts_CPM, by = c('genes' = 'gene'))
-    results_filtered <- filter(results, padj < p_value_threshold) %>% arrange(padj)
-    results_filtered_UP <- filter(results_filtered, log2FoldChange >  FC_threshold) 
-    results_filtered_DOWN <- filter(results_filtered, log2FoldChange <  FC_threshold)
+    results_filtered <- filter(results, padj < p_value_threshold & (log2FoldChange >= FC_threshold | log2FoldChange <= -1*FC_threshold)) %>% arrange(padj)
+    results_filtered_UP <- filter(results_filtered, log2FoldChange >=  FC_threshold) 
+    results_filtered_DOWN <- filter(results_filtered, log2FoldChange <=  -1*FC_threshold)
 
     # Write results to CSV files
     write.csv(results_filtered |> arrange(padj), file=here(gene_lists_path, paste('ALL_GENES_DEG_Analysis', cluster, 'Wilcox', group2, 'vs', group1, '.csv', sep='_')))
@@ -629,9 +629,9 @@ DEG_FindMarkers_SCT_assay <- function (scRNAseq, comparison, group1, group2, is_
                     left_join(y= unique(annotations[,c('gene_name', 'description')]),
                         by = c('genes' = 'gene_name')) |>
                     left_join(y = counts_CPM, by = c('genes' = 'gene'))
-    results_filtered <- filter(results, padj < p_value_threshold) %>% arrange(padj)
-    results_filtered_UP <- filter(results_filtered, log2FoldChange > FC_threshold) 
-    results_filtered_DOWN <- filter(results_filtered, log2FoldChange < FC_threshold)
+    results_filtered <- filter(results, padj < p_value_threshold & (log2FoldChange >= FC_threshold | log2FoldChange <= -1*FC_threshold)) %>% arrange(padj)
+    results_filtered_UP <- filter(results_filtered, log2FoldChange >= FC_threshold) 
+    results_filtered_DOWN <- filter(results_filtered, log2FoldChange <= -1*FC_threshold)
 
     # Write results to CSV files
     write.csv(results_filtered |> arrange(padj), file=here(gene_lists_path, paste('ALL_GENES_DEG_Analysis', cluster, 'Wilcox', group2, 'vs', group1, '.csv', sep='_')))
@@ -764,8 +764,8 @@ bulk_analysis <- function (counts_table, comparison = 'Groups', group1, group2, 
             ) &(log2FoldChange >= FC_threshold |
                 log2FoldChange <= -1 * FC_threshold)) |> 
         arrange(padj)
-    results_filtered_UP <- filter(results_filtered, log2FoldChange >  FC_threshold) 
-    results_filtered_DOWN <- filter(results_filtered, log2FoldChange <  FC_threshold)
+    results_filtered_UP <- filter(results_filtered, log2FoldChange >=   FC_threshold) 
+    results_filtered_DOWN <- filter(results_filtered, log2FoldChange <= -1*FC_threshold)
 
     # Write results to CSV files
     write.csv(results |> arrange(padj), file= here(gene_lists_path, paste('ALL_GENES_DEG_Analysis', cluster, 'bulk', group2, 'vs', group1, '.csv', sep='_')))
@@ -929,7 +929,7 @@ annotate_seurat_with_SingleR_Eduard <- function(
 
 # Find and save top marker genes per cluster in a Seurat object
 
-top_genes_per_cluster <- function (seurat, object_annotations = '', tables_path = 'results/tables/', figures_path = 'results/figures/', results_path = 'results/', run_pathway_enrichment = FALSE) {
+top_genes_per_cluster <- function (seurat, n_genes_to_plot = 3, object_annotations = '', tables_path = 'results/tables/', figures_path = 'results/figures/', results_path = 'results/', run_pathway_enrichment = FALSE) {
     # Function to find top genes per cluster in a Seurat object and save results
     # Args:
     #   seurat: Seurat object
@@ -964,8 +964,7 @@ top_genes_per_cluster <- function (seurat, object_annotations = '', tables_path 
     seurat.markers %>%
         group_by(cluster) %>%
         arrange(desc(avg_log2FC)) |>
-        slice_head(n = 25) |>
-        ungroup() -> top25
+        slice_head(n = 25) -> top25
 
     #Top100 markers
     seurat.markers %>%
@@ -973,11 +972,11 @@ top_genes_per_cluster <- function (seurat, object_annotations = '', tables_path 
         arrange(desc(avg_log2FC)) |>
         slice_head(n = 100) -> top100
 
-    #Top3 markers
+    #Topn markers
     seurat.markers %>%
         group_by(cluster) %>%
         arrange(desc(avg_log2FC)) |>
-        slice_head(n = 3) -> top3
+        slice_head(n = n_genes_to_plot) -> topn
     
     # Save the top markers to files
     write.table(top100,file=here(tables_path, paste0('top100', '_',object_annotations, ".tsv")), sep="\t",row.names = FALSE)
@@ -992,7 +991,7 @@ top_genes_per_cluster <- function (seurat, object_annotations = '', tables_path 
                 file = here(tables_path, paste0('top100_gene_names_per_cluster_', object_annotations, ".tsv")),
                 sep = "\t", row.names = FALSE, quote = FALSE)
 
-    gene_list_plot <- top3 |> pull(gene)
+    gene_list_plot <- topn |> pull(gene)
 
     gene_list_plot <- gene_list_plot |> unique() |> rev()
     plot1 <- DotPlot_scCustom(seurat,
@@ -1014,7 +1013,7 @@ top_genes_per_cluster <- function (seurat, object_annotations = '', tables_path 
         gProfiler2_functional_analysis_cluster_identification(seurat, top25, identities = 'seurat_clusters', path=results_path, object_annotations = object_annotations) 
     }
 
-    return(plot1)
+    return(list(plot = plot1))
 
 }
 
@@ -1025,7 +1024,7 @@ extract_cell_counts <- function(seurat, grouping_var, figures_path, tables_path,
     counts <- cell_counts %>% add_count(Samples, name='total_cell_count_by_sample') 
 
     counts <- counts %>% 
-        dplyr::count(  {{grouping_var}},  , Samples, total_cell_count_by_sample,name='cluster_count')  |> 
+        dplyr::count(  {{grouping_var}},  , Samples, Groups,  total_cell_count_by_sample,name='cluster_count')  |> 
             mutate(frequency_within_sample=cluster_count*100/total_cell_count_by_sample)  |> 
             mutate(Samples = as.character(Samples)) |> 
             arrange(Samples, desc(Samples)) 
@@ -1046,13 +1045,13 @@ extract_cell_counts <- function(seurat, grouping_var, figures_path, tables_path,
     # ggsave(plot = plot1, filename = paste0(figures_path, englue("frequency per {{grouping_var}} per group"), object_annotations, ".pdf"))
     # print(plot1)
 
-    counts <- cell_counts %>% add_count(Groups, name='total_cell_count_by_sample')
-    counts <- counts %>% 
-        dplyr::count({{grouping_var}}, Groups, total_cell_count_by_sample,name='frequency_within_sample')  |> 
-            mutate(frequency_within_sample=frequency_within_sample*100/total_cell_count_by_sample)  
+    # counts <- cell_counts %>% add_count(Groups, name='total_cell_count_by_sample')
+    # counts <- counts %>% 
+    #     dplyr::count({{grouping_var}}, Groups, total_cell_count_by_sample,name='frequency_within_sample')  |> 
+    #         mutate(frequency_within_sample=frequency_within_sample*100/total_cell_count_by_sample)  
 
     # Barplot of proportion of cells in each cluster by sample
-    plot2 <- ggplot(counts, aes(x={{grouping_var}} |> fct_reorder(frequency_within_sample) |> fct_rev(), y = frequency_within_sample,fill=Groups)) +
+    plot2 <- ggplot(counts, aes(x={{grouping_var}} |> fct_reorder(frequency_within_sample) |> fct_rev(), y = frequency_within_sample, fill=Groups)) +
         geom_jitter(position = position_jitterdodge(jitter.width = 0.15, dodge.width = 0.8), show.legend = TRUE) +
         stat_summary(fun = mean, geom = "bar", position = position_dodge(width = 0.9), aes(fill = Groups, alpha = 0.5)) +
         stat_summary(fun.data = mean_se, fun.args = list(mult = 1),
