@@ -45,6 +45,7 @@ format:
 :::
 
 ```{r}
+#| cache: false
 # General R and plotting 
 library(conflicted)
 library(tidyverse)
@@ -87,7 +88,6 @@ library(rlang)
 
 # Python Version 3.9.6!!! 
 
-knitr::dep_prev()
 # peconflicts_scout()
 conflicts_prefer(dplyr::filter)
 conflicts_prefer(dplyr::select)
@@ -126,6 +126,8 @@ source(here('scripts/circlize_functions.r'))
 diverging_palette <- hcl.colors(n = 20,'Purple-Green',rev = T)
 sequential_palette_dotplot <- hcl.colors(n = 20,'YlGn',rev = T)
 sequential_palette <- hcl.colors(n = 20,'Mako',rev = T)
+
+knitr::dep_prev()
 ```
 
 # Initial notes
@@ -1765,6 +1767,8 @@ This plot suggests K=10 might be a local optimum in stability so lets try that s
 :::
 
 
+### cNMF results with K=6 
+
 ```{r}
 cmd = paste("cnmf consensus --output-dir", data_dir,
             "--name", runname,
@@ -1774,8 +1778,6 @@ cmd = paste("cnmf consensus --output-dir", data_dir,
 print(cmd)
 system(cmd)
 ```
-
-### cNMF results with K=6 
 
 ![Alt text](./data/cNMF/cNMF_run.clustering.6.dt_0_1.png)
 
@@ -1933,14 +1935,9 @@ usage_norm <- as.data.frame(t(apply(usage, 1, function(x) x / sum(x))))
 
 
 #### Visualizing gene expression programs on UMAP
-
 ```{r}
 #| fig-width: 16
 #| fig-height: 20
-conflicts_prefer(dplyr::filter)
-conflicts_prefer(dplyr::select)
-conflicts_prefer(base::setdiff)
-conflicts_prefer(dplyr::rename)
 barcodes <- Cells(seurat)
 
 seurat@meta.data <- seurat@meta.data |>
@@ -2168,6 +2165,7 @@ DimPlot(seurat, reduction = "umap", label = TRUE)
 
 # Convert to SingleCellExperiment
 Idents(seurat) <- 'Samples'
+DefaultAssay(seurat) <- 'RNA'
 seurat_sce <- as.SingleCellExperiment(seurat)
 seurat_milo <- Milo(seurat_sce)
 
@@ -2193,61 +2191,91 @@ rownames(trajectory_design) <- trajectory_design$Samples
 trajectory_design <- trajectory_design[colnames(nhoodCounts(trajectory_milo)), , drop = FALSE ]
 head(trajectory_design)
 trajectory_milo <- calcNhoodDistance(trajectory_milo, d = dimensions, reduced.dim = 'PCA')
+trajectory_milo <- buildNhoodGraph(trajectory_milo)
 
 
 # Pairwise DA testing using contrasts Abau vs Ftula
-contrast_Abau_vs_Ftula <- c('GroupsAbau - GroupsFtula')
-da_results <- testNhoods(trajectory_milo, design = ~ 0 + Groups, design.df = trajectory_design, model.contrasts = contrast_Abau_vs_Ftula, fdr.weighting = 'graph-overlap', norm.method = 'TMM')
-da_results |> arrange(SpatialFDR) |> head()
-ggplot(da_results, aes(PValue)) +
+contrast <- c('GroupsAbau - GroupsFtula')
+da_results_Abau_vs_Ftula <- testNhoods(trajectory_milo, design = ~ 0 + Groups, design.df = trajectory_design, model.contrasts = contrast, fdr.weighting = 'graph-overlap', norm.method = 'TMM')
+da_results_Abau_vs_Ftula |> arrange(SpatialFDR) |> head()
+ggplot(da_results_Abau_vs_Ftula, aes(PValue)) +
     geom_histogram(bins = 50) +
     theme_classic() +
     labs(title = 'Histogram of p-values')
 #Visualize Neighborhoods
-trajectory_milo <- buildNhoodGraph(trajectory_milo)
-neighborhood_graph_plot <- plotNhoodGraphDA(trajectory_milo, da_results, layout = 'UMAP', alpha = 0.1) + 
+neighborhood_graph_plot <- plotNhoodGraphDA(trajectory_milo, da_results_Abau_vs_Ftula, layout = 'UMAP', alpha = 0.1) + 
     scale_color_gradient(viridis(n = 10)) +
     labs(title = 'Abau vs Ftula', subtitle = 'MiloR Neighborhoods colored by DA results')
 neighborhood_graph_plot
 ggsave(filename = 'MiloR_Neighborhoods_DA_Abau_vs_Ftula.pdf', path = figures_path, width = 7, height = 5)
+da_results_Abau_vs_Ftula <- annotateNhoods(trajectory_milo, da_results_Abau_vs_Ftula, coldata_col = 'seurat_clusters')
+ggplot(da_results_Abau_vs_Ftula, aes(seurat_clusters_fraction)) + geom_histogram(bins = 50)
+plotDAbeeswarm(da_results_Abau_vs_Ftula, group.by = 'seurat_clusters')
 
 # Pairwise DA testing using contrasts Abau vs CT
-contrast_Abau_vs_Ftula <- c('GroupsAbau - GroupsCT')
-da_results <- testNhoods(trajectory_milo, design = ~ 0 + Groups, design.df = trajectory_design, model.contrasts = contrast_Abau_vs_Ftula, fdr.weighting = 'graph-overlap', norm.method = 'TMM')
-da_results |> arrange(SpatialFDR) |> head()
-ggplot(da_results, aes(PValue)) +
+contrast <- c('GroupsAbau - GroupsCT')
+da_results_Abau_vs_CT <- testNhoods(trajectory_milo, design = ~ 0 + Groups, design.df = trajectory_design, model.contrasts = contrast, fdr.weighting = 'graph-overlap', norm.method = 'TMM')
+da_results_Abau_vs_CT |> arrange(SpatialFDR) |> head()
+ggplot(da_results_Abau_vs_CT, aes(PValue)) +
     geom_histogram(bins = 50) +
     theme_classic() +
     labs(title = 'Histogram of p-values')
 #Visualize Neighborhoods
-trajectory_milo <- buildNhoodGraph(trajectory_milo)
-neighborhood_graph_plot <- plotNhoodGraphDA(trajectory_milo, da_results, layout = 'UMAP', alpha = 0.1) + 
+neighborhood_graph_plot <- plotNhoodGraphDA(trajectory_milo, da_results_Abau_vs_CT, layout = 'UMAP', alpha = 0.1) + 
     scale_color_gradient(viridis(n = 10)) +
     labs(title = 'Abau vs CT', subtitle = 'MiloR Neighborhoods colored by DA results')
 neighborhood_graph_plot
 ggsave(filename = 'MiloR_Neighborhoods_DA_Abau_vs_CT.pdf', path = figures_path, width = 7, height = 5)
+da_results_Abau_vs_CT <- annotateNhoods(trajectory_milo, da_results_Abau_vs_CT, coldata_col = 'seurat_clusters')
+ggplot(da_results_Abau_vs_CT, aes(seurat_clusters_fraction)) + geom_histogram(bins = 50)
+plotDAbeeswarm(da_results_Abau_vs_CT, group.by = 'seurat_clusters')
 
 # Pairwise DA testing using contrasts Ftula vs CT
-contrast_Abau_vs_Ftula <- c('GroupsFtula - GroupsCT')
-da_results <- testNhoods(trajectory_milo, design = ~ 0 + Groups, design.df = trajectory_design, model.contrasts = contrast_Abau_vs_Ftula, fdr.weighting = 'graph-overlap', norm.method = 'TMM')
-da_results |> arrange(SpatialFDR) |> head()
-ggplot(da_results, aes(PValue)) +
+contrast <- c('GroupsFtula - GroupsCT')
+da_results_Ftula_vs_CT <- testNhoods(trajectory_milo, design = ~ 0 + Groups, design.df = trajectory_design, model.contrasts = contrast, fdr.weighting = 'graph-overlap', norm.method = 'TMM')
+da_results_Ftula_vs_CT |> arrange(SpatialFDR) |> head()
+ggplot(da_results_Ftula_vs_CT, aes(PValue)) +
     geom_histogram(bins = 50) +
     theme_classic() +
     labs(title = 'Histogram of p-values')
 #Visualize Neighborhoods
-trajectory_milo <- buildNhoodGraph(trajectory_milo)
-neighborhood_graph_plot <- plotNhoodGraphDA(trajectory_milo, da_results, layout = 'UMAP', alpha = 0.1) + 
+neighborhood_graph_plot <- plotNhoodGraphDA(trajectory_milo, da_results_Ftula_vs_CT, layout = 'UMAP', alpha = 0.1) + 
     scale_color_gradient(viridis(n = 10)) +
     labs(title = 'Ftula vs CT', subtitle = 'MiloR Neighborhoods colored by DA results')
 neighborhood_graph_plot
 ggsave(filename = 'MiloR_Neighborhoods_DA_Ftula_vs_CT.pdf', path = figures_path, width = 7, height = 5)
+da_results_Ftula_vs_CT <- annotateNhoods(trajectory_milo, da_results_Ftula_vs_CT, coldata_col = 'seurat_clusters')
+ggplot(da_results_Ftula_vs_CT, aes(seurat_clusters_fraction)) + geom_histogram(bins = 50)
+plotDAbeeswarm(da_results_Ftula_vs_CT, group.by = 'seurat_clusters')
 
 ```
 
 ### Neighborhood differential gene expression analysis
 
-Work in progress
+```{r}
+da_results_Abau_vs_Ftula <- annotateNhoods(trajectory_milo, da_results_Abau_vs_Ftula, coldata_col = 'seurat_clusters')
+ggplot(da_results_Abau_vs_Ftula, aes(seurat_clusters_fraction)) + geom_histogram(bins = 50)
+```
+
+Clearly some neighborhoods span multiple clusters, which is to be expected given the continuous nature of the clustering in this dataset.
+
+```{r}
+plotDAbeeswarm(da_results_Abau_vs_Ftula, group.by = 'seurat_clusters')
+```
+
+It seems that the clusters capture pretty well the DA signal, but we can still try to find genes that are differentially expressed in the neighborhoods that are DA.
+
+```{r}
+trajectory_milo <- logNormCounts(trajectory_milo)
+da_results_Abau_vs_Ftula$NhoodGroup <- as.numeric(da_results_Abau_vs_Ftula$SpatialFDR < 0.1 & da_results_Abau_vs_Ftula$logFC < 0, aggregate.samples = T)
+da_results_Abau_vs_Ftula <- findNhoodMarkers(trajectory_milo, da_results_Abau_vs_Ftula, aggregate.samples = T, sample_col = 'Samples')
+da_results_Abau_vs_Ftula |> head()
+# str(trajectory_milo, max.level = 1)
+# str(seurat_sce, max.level = 1)
+# rowData(seurat_sce) |> rownames()
+# rowData(trajectory_milo) |> rownames()
+```
+
 
 ## Trajectory analysis
 
@@ -2468,10 +2496,8 @@ calculate_D50(seurat, cell_grouping_var = seurat_clusters, replicate_var = Sampl
 
 ```{r}
 #| layout-ncol: 2
-#| #| fig-width: 10
+#| fig-width: 10
 #| fig-height: 10
-
-seurat$barcode <- Cells(seurat)
 
 # By sample
 immunarch_table <- exportClones(seurat, format = 'immunarch', write.file = FALSE, group.by = 'Samples')

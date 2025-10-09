@@ -63,11 +63,11 @@ scatterplot <- function (results, group1, group2, cluster, my_colors, local_figu
            scale_y_log10(limits =  c(0.5, mylims))
 
         plot_filename <- if (!is.null(gene_list_name)) {
-            paste0(local_figures_path, test_type, '_scatter_', gene_list_name, '_DEG_in_', cluster, '.pdf')
+            paste0(test_type, '_scatter_', gene_list_name, '_DEG_in_', cluster, '.pdf')
         } else {
-            paste0(local_figures_path, test_type, '_scatter_genes_of_interest_DEG_in_', cluster, '.pdf')
+            paste0(test_type, '_scatter_genes_of_interest_DEG_in_', cluster, '.pdf')
         }
-        ggsave(plot = scatter_plot, filename = plot_filename)
+        ggsave(plot = scatter_plot, filename = plot_filename, path = local_figures_path)
         print(scatter_plot)
         return(results_scatter)
     }
@@ -170,7 +170,7 @@ scatterplot <- function (results, group1, group2, cluster, my_colors, local_figu
        scale_x_log10(limits =  c(0.5, mylims))+
        scale_y_log10(limits =  c(0.5, mylims))
 
-    ggsave(plot = scatter_plot, filename = paste0(local_figures_path, test_type,'_scatter_DEG_in_', cluster, '.pdf'))
+    ggsave(plot = scatter_plot, filename = paste0(test_type,'_scatter_DEG_in_', cluster, '.pdf'), path = local_figures_path)
     print(scatter_plot)
     return(results_scatter)    
 }
@@ -247,11 +247,11 @@ volcano_plot <- function (results_scatter, group1, group2, cluster, my_colors, l
                 scale_y_continuous(n.breaks = 8) +
                 scale_x_continuous(n.breaks = 8)
         plot_filename <- if (!is.null(gene_list_name)) {
-            paste0(local_figures_path, test_type, '_volcano_', gene_list_name, '_DEG_in_', cluster, '.pdf')
+            paste0(test_type, '_volcano_', gene_list_name, '_DEG_in_', cluster, '.pdf')
         } else {
-            paste0(local_figures_path, test_type, '_volcano_genes_of_interest_DEG_in_', cluster, '.pdf')
+            paste0(test_type, '_volcano_genes_of_interest_DEG_in_', cluster, '.pdf')
         }
-        ggsave(plot=volcano_plot_2, filename = plot_filename)
+        ggsave(plot=volcano_plot_2, filename = plot_filename, path = local_figures_path)
         print(volcano_plot_2)
         return(invisible(NULL))
     }
@@ -298,7 +298,7 @@ volcano_plot <- function (results_scatter, group1, group2, cluster, my_colors, l
             )         +
             scale_y_continuous(n.breaks = 8) +
             scale_x_continuous(n.breaks = 8)
-    ggsave(plot = volcano_plot, filename = paste0(local_figures_path, test_type, '_volcano_DEG_in_', cluster, '.pdf'))
+    ggsave(plot = volcano_plot, filename = paste0(test_type, '_volcano_DEG_in_', cluster, '.pdf'), path = local_figures_path)
     print(volcano_plot)
 }
 
@@ -377,7 +377,7 @@ pseudobulk <- function (scRNAseq, comparison, group1, group2, cluster='all_clust
     DESeq2::plotPCA(rld, ntop=500, intgroup='condition') #PCA
     ggsave(filename=paste0('Pseudobulk_PCA_', cluster, '.pdf'), path=local_figures_path) 
     PCA_table <- DESeq2::plotPCA(rld, ntop=500, intgroup='condition', returnData = T) #PCA table
-    write.csv(PCA_table, file=paste(path, 'PCA_pseudobulk', cluster, group2, 'vs', group1, '.csv', sep='_'))
+    write.csv(PCA_table, file = here(path, paste('PCA_pseudobulk', cluster, group2, 'vs', group1, '.csv', sep='_')))
 
     #################### Run DESeq2
     dds <- DESeq(dds)
@@ -456,7 +456,7 @@ pseudobulk <- function (scRNAseq, comparison, group1, group2, cluster='all_clust
     }   
     
     return(c(all_count=DEG_count, UP_count=DEG_UP_count, DOWN_count=DEG_DOWN_count))    
-}                            
+}                                                   
 
 # Wilcox DE analysis
 
@@ -723,7 +723,7 @@ bulk_analysis <- function (counts_table, comparison = 'Groups', group1, group2, 
     DESeq2::plotPCA(rld, ntop=500, intgroup='condition') #PCA
     ggsave(filename=paste0('Bulk_PCA_', cluster, '.pdf'), path=local_figures_path) 
     PCA_table <- DESeq2::plotPCA(rld, ntop=500, intgroup='condition', returnData = T) #PCA table
-    write.csv(PCA_table, file=paste(path, 'PCA_bulk', cluster, group2, 'vs', group1, '.csv', sep='_'))
+    write.csv(PCA_table, file=here(path, paste( 'PCA_bulk', cluster, group2, 'vs', group1, '.csv', sep='_')))
 
     #################### Run DESeq2
     dds <- DESeq(dds)
@@ -1032,12 +1032,12 @@ extract_cell_counts <- function(seurat, grouping_var, figures_path, tables_path,
     frequency_table <- counts |> 
         arrange(Samples) |>     
         pivot_wider(id_cols = {{grouping_var}},  names_from = 'Samples', values_from = frequency_within_sample)
-    write.csv(frequency_table,file=paste0(tables_path, englue("frequency per {{grouping_var}} per condition "), object_annotations, ".csv"), row.names=F)
+    write.csv(frequency_table,file=here(tables_path, paste0(englue("frequency per {{grouping_var}} per condition "), object_annotations, ".csv")), row.names=F)
 
     count_table <- counts |> 
         arrange(Samples) |>     
         pivot_wider(id_cols = {{grouping_var}}, names_from = 'Samples', values_from = cluster_count)
-    write.csv(count_table,file=paste0(tables_path, englue("counts per {{grouping_var}} per condition "), object_annotations, ".csv"),row.names=F)
+    write.csv(count_table,file = here(tables_path, paste0(englue("counts per {{grouping_var}} per condition "), object_annotations, ".csv")),row.names=F)
 
     # # Barplot of proportion of cells in each cluster by sample
     # plot1 <- ggplot(seurat@meta.data) +
@@ -1061,10 +1061,104 @@ extract_cell_counts <- function(seurat, grouping_var, figures_path, tables_path,
         labs(x = 'Cell type', y = 'Frequency (%)', title = englue('Frequency per {{grouping_var}}'))+
         guides(alpha = 'none')+
         theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1))
-    ggsave(plot = plot2, filename =  paste0(figures_path, englue('frequency_per_{{grouping_var}}_per_sample '), object_annotations, '.pdf'), width = 12, height = 6)
+    ggsave(plot = plot2, filename =  paste0(englue('frequency_per_{{grouping_var}}_per_sample '), object_annotations, '.pdf'), width = 12, height = 6, path = figures_path)
     print(plot2)
 }
+calculate_D50 <- function (seurat, cell_grouping_var, replicate_var, replicate_group_var = NULL, results_path, figures_path) {
+
+    #Extracting TCR data for clusters of interest
+    Idents(seurat) <- englue("{{cell_grouping_var}}")
+    combined2 <- scRepertoire:::.expression2List(seurat, split.by ='ident')
+    combined3 <- scRepertoire:::.expression2List(seurat, split.by ='orig.ident')
+    grouping_var_levels <- levels(seurat@meta.data |> pull({{cell_grouping_var}}))
+    replicate_var_levels <- levels(seurat@meta.data |> pull({{replicate_var}}))
+
+    #Initiating results data frame
+    results <- as.data.frame(matrix(nrow = 0,ncol = length(grouping_var_levels)))
+    # colnames(results)
+    rnames <- c()
+
+    #Calculate D50
+    for (HTO in replicate_var_levels) {
+        
+        result <- c()
+
+        cell_type_HTO_data <- combined3[[1]]|>
+                                        filter({{replicate_var}} == HTO) |>
+                                        add_count(CTaa, sort=TRUE)
+            #Calculating D50
+            if (nrow(cell_type_HTO_data) < 20) {
+                D50 <- NA 
+            } else {
+                L50 <- floor(nrow(cell_type_HTO_data)/2)
+                number_unique_50 <- cell_type_HTO_data[1:L50,] %>% summarise(n_distinct(CTaa)) %>% as.numeric()
+                number_unique_total <- cell_type_HTO_data[] %>% summarise(n_distinct(CTaa)) %>% as.numeric()
+                D50 <- number_unique_50/number_unique_total
+            }
+            result <- c(result, D50)
 
 
+        for (cell_type in grouping_var_levels) {
+            #Extracting data for cell type and HTO
+            cell_type_HTO_data <- combined2[[cell_type]]|>
+                                        filter({{replicate_var}} == HTO) |>
+                                        add_count(CTaa, sort=TRUE)
+
+            #Calculating D50
+            if (nrow(cell_type_HTO_data) < 20) {
+                D50 <- NA 
+            } else {
+                L50 <- floor(nrow(cell_type_HTO_data)/2)
+                number_unique_50 <- cell_type_HTO_data[1:L50,] %>% summarise(n_distinct(CTaa)) %>% as.numeric()
+                number_unique_total <- cell_type_HTO_data[] %>% summarise(n_distinct(CTaa)) %>% as.numeric()
+                D50 <- number_unique_50/number_unique_total
+            }
+            result <- c(result, D50)
+        }
+        results <- rbind(results, result)
+        rnames <- c(rnames, HTO)
+        # print(HTO)
+
+    }
+    colnames(results) <- paste0(c('All', grouping_var_levels), '_D50')
+    results <- results %>% mutate({{replicate_var}} := rnames) |> arrange({{replicate_var}}) |> relocate({{replicate_var}})
+
+    write.csv(results, file = englue("{results_path}/D50_per_{{cell_grouping_var}}.csv"), row.names=FALSE)
+    print(head(results))
+
+    # Convert results to long format for plotting
+    results_long <- results %>%
+        pivot_longer(-{{replicate_var}}, names_to = englue("{{cell_grouping_var}}"), values_to = "D50") |>
+        mutate({{cell_grouping_var}} := fct_inorder({{cell_grouping_var}}))
 
 
+    
+# Add replicate grouping variable information
+    if (!(englue('replicate_var') == englue('{{replicate_group_var}}'))) {
+        replicate_grouping_var_info <- seurat@meta.data |> 
+            dplyr::select({{replicate_var}}, {{replicate_group_var}})       
+        replicate_grouping_var_info <- replicate_grouping_var_info[!duplicated(replicate_grouping_var_info), ]
+        results_long <- results_long |> 
+            left_join(replicate_grouping_var_info, by = join_by({{replicate_var}} == {{replicate_var}}))
+    }
+
+
+    # Remove NA values for plotting
+    results_long <- results_long %>% filter(!is.na(D50))
+
+    # Plot: x axis is {{replicate_var}}, show only dots (no columns)
+    plot1 <- ggplot(results_long, aes(x = {{cell_grouping_var}}, y = D50, color = {{replicate_group_var}})) +
+        geom_jitter(position = position_jitterdodge(jitter.width = 0.15, dodge.width = 0.8), show.legend = TRUE) +
+        stat_summary(fun = mean, geom = "bar", position = position_dodge(width = 0.9), aes(fill = {{replicate_group_var}}, alpha = 0.5)) +
+        stat_summary(fun.data = mean_se, fun.args = list(mult = 1),
+            geom = "errorbar", width = 0.2, position = position_dodge(width = 0.9) ) +
+        scale_y_continuous(limits = c(0, 0.5), expand = expansion(mult = c(0, 0.05))) +
+        theme_classic() +
+        labs(x = englue("{{replicate_var}}"), y = "D50 Diversity", title = englue("D50 per Group by {{cell_grouping_var}}")) +
+        guides(alpha = 'none')+
+        theme(axis.text.x = element_text(angle = 45, hjust = 1),
+            text = element_text(size = 14),
+            axis.line = element_line(colour = "black")) 
+    ggsave(plot = plot1, filename = paste0(englue('D50_per_{{cell_grouping_var}}.pdf')), width = length(levels(results_long |> pull({{cell_grouping_var}})))+2, height = 6, path = figures_path)
+    print(plot1)
+}

@@ -1,6 +1,6 @@
 ### Over representation analysis -- gProfiler2
-gProfiler2_overrepresentation_analysis <- function (significant_genes_FC_ordered, local_path, group, cluster,  filename = '', p_value_threshold = 0.05) {
-
+gProfiler2_overrepresentation_analysis <- function (significant_genes_FC_ordered, local_path, group, cluster,  filename = '', p_value_threshold = 0.05, highlighted_terms = F) {
+     
     significant_genes_FC_ordered <- list(significant_genes_FC_ordered)
     names(significant_genes_FC_ordered) <- paste0('UP in ', group, ' - ', cluster)
     enrichment_results <- gost(query = significant_genes_FC_ordered, 
@@ -10,17 +10,23 @@ gProfiler2_overrepresentation_analysis <- function (significant_genes_FC_ordered
                     measure_underrepresentation = FALSE, evcodes = FALSE, 
                     user_threshold = p_value_threshold, correction_method = "g_SCS", 
                     domain_scope = "annotated", custom_bg = NULL, 
-                    numeric_ns = "", as_short_link = FALSE, highlight = TRUE)
+                    numeric_ns = "", as_short_link = FALSE, highlight = highlighted_terms)
+     
 
     if (!(is.null(enrichment_results[['result']]) )) {
 
+     if (!highlighted_terms) {
+        enrichment_results[['result']] <- enrichment_results[['result']]  |> mutate(highlighted = T)
+     }
+          
+
      # Manhattan plot of results
      plot  <- gostplot(enrichment_results, capped = T, interactive=T)
-     htmlwidgets::saveWidget((plot), paste0(local_path, filename, 'Pathway_enrichment_analysis_gprofiler2', '.html'))
+     htmlwidgets::saveWidget((plot), here(local_path, paste0(filename, 'Pathway_enrichment_analysis_gprofiler2', '.html')))
      enrichment_results2 <- enrichment_results
      enrichment_results2[['result']] <- enrichment_results2[['result']] |> filter((source %in% c('GO:BP', 'GO:CC', 'GO:MF') & highlighted) | !(source %in% c('GO:BP', 'GO:CC', 'GO:MF')))
      plot  <- gostplot(enrichment_results2, capped = T, interactive=T)
-     htmlwidgets::saveWidget((plot), paste0(local_path, filename, 'Pathway_enrichment_analysis_gprofiler2_summary_pathways', '.html'))
+     htmlwidgets::saveWidget((plot), here(local_path, paste0(filename, 'Pathway_enrichment_analysis_gprofiler2_summary_pathways', '.html')))
      rm(enrichment_results2)
      # print(plot)
       
@@ -42,11 +48,11 @@ gProfiler2_overrepresentation_analysis <- function (significant_genes_FC_ordered
        theme_minimal() +
        theme(axis.text.y = element_text(size = 12), title = element_text(size = 16), plot.title.position = 'plot', legend.position = 'none', axis.text.x = element_text(size = 12))
      print(plot2)
-     ggsave(plot = plot2, filename = paste0(local_path, filename, 'Pathway_enrichment_analysis_gprofiler2', '.pdf'), width = 12, height = 6)
+     ggsave(plot = plot2, filename = paste0(filename, 'Pathway_enrichment_analysis_gprofiler2', '.pdf'), width = 12, height = 6, path = local_path)
       
       # Saving results table
      enrichment_results2 <- enrichment_results[['result']] |> dplyr::select(-c('parents'))
-     write.csv(enrichment_results2, paste0(local_path, filename, 'Pathway_enrichment_analysis_gprofiler2', '.csv'))
+     write.csv(enrichment_results2, here(local_path, paste0(filename, 'Pathway_enrichment_analysis_gprofiler2', '.csv') ))
 
     }else {
      p1 <- ggplot()+theme_void()+ geom_text(aes(0,0,label='N/A'))+ xlab(NULL)
