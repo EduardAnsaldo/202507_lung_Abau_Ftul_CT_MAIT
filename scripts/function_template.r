@@ -306,6 +306,9 @@ volcano_plot <- function (results_scatter, group1, group2, cluster, my_colors, l
 
 pseudobulk <- function (scRNAseq, comparison, group1, group2, cluster='all_clusters', path='./', FC_threshold = 0.3, p_value_threshold = 0.05, max_overlaps = 15, label_size = 5, pathways_of_interest = NULL, label_threshold = 100000, distance_from_diagonal_threshold = 0.4, gene_lists_to_plot = NULL, expression_threshold_for_gene_list = 20, colors = c('green4', 'darkorchid4'), minimum_cell_number = 10, run_gProfiler2 = FALSE) {
 
+    # Subset seurat object
+    scRNAseq <- subset(scRNAseq, subset = (str_detect(!!as.name(comparison), group1) | str_detect(!!as.name(comparison), group2)))
+
     # Set colors for the plot
     my_colors <- c(colors, "gray")
     names(my_colors) <- c("DOWN", "UP", "NO")

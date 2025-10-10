@@ -138,8 +138,6 @@ sequential_palette <- hcl.colors(n = 20,'Mako',rev = T)
 
 ```{r}
 #| results: hide
-#| #Load the dataset from the cellranger outs
-#| results: hide
 #Load the dataset from the cellranger outs
 scdata <- Read10X(data.dir = here("data/cluster_processing_2/aggr_all/outs/count/filtered_feature_bc_matrix"))
 
