@@ -27,6 +27,7 @@ format:
     fig-cap-location: top
     toc: true
     toc-depth: 3
+
     toc-expand: 1
     toc-location: left
     toc-title: Table of Contents
@@ -96,17 +97,23 @@ conflicts_prefer(dplyr::rename)
 conflicts_prefer(base::unname)
 conflicts_prefer(tidyr::expand)
 
+# Loading custom functions
+source(here('scripts/function_template.r'))
+source(here('scripts/metascape_functions.r'))
+source(here('scripts/circlize_functions.r'))
+
 ```
 
 ```{r}
 #| results: hide 
+#| cache: false 
 # Setting working directory and seed
 # renv::update()
 # renv::snapshot()
 # renv::init()
 # renv::status()
 set.seed(3514)
-i_am('scripts/Analysis.qmd')
+# i_am('scripts/Analysis.qmd')
 here()
 results_path <- here('results/')
 dir.create(results_path)
@@ -121,7 +128,7 @@ dir.create(tables_path)
 
 # Loading custom functions
 source(here('scripts/function_template.r'))
-source(here('scripts/gProfiler2_functions.r'))
+source(here('scripts/metascape_functions.r'))
 source(here('scripts/circlize_functions.r'))
 
 # Setting up color palettes
@@ -946,7 +953,7 @@ DimPlot(seurat, reduction = "umap", label = FALSE, group.by = 'Groups') + ggtitl
 ### Top DEGs per cluster
 
 ```{r}
-#| layout-ncol: 3
+#| layout-ncol: 2
 # seurat <- PrepSCTFindMarkers(seurat)
 plot1 <- top_genes_per_cluster(seurat, n_genes_to_plot = 3, object_annotations = object_annotations, tables_path = tables_path, figures_path = figures_path, results_path = results_path, run_pathway_enrichment = F) 
 ```
@@ -1152,9 +1159,9 @@ extract_cell_counts(seurat, seurat_clusters, figures_path, tables_path, object_a
 ## Top DEGs per cluster
 
 ```{r}
-#| layout-ncol: 3
+#| layout-ncol: 2
 # seurat <- PrepSCTFindMarkers(seurat)
-plot1 <- top_genes_per_cluster(seurat, n_genes_to_plot=5, object_annotations, tables_path = tables_path, figures_path = figures_path, results_path = results_path, run_pathway_enrichment = T) 
+plot1 <- top_genes_per_cluster(seurat, n_genes_to_plot=5, object_annotations, tables_path = tables_path, figures_path = figures_path, results_path = results_path, run_pathway_enrichment = F) 
 ```
 
 ```{r}
@@ -1442,7 +1449,7 @@ extract_cell_counts(seurat, seurat_clusters, figures_path, tables_path, object_a
 ## Top DEGs per cluster
 
 ```{r}
-#| layout-ncol: 3
+#| layout-ncol: 2
 seurat <- PrepSCTFindMarkers(seurat)
 
 plot1 <- top_genes_per_cluster(seurat, n_genes_to_plot=5, object_annotations, tables_path = tables_path, figures_path = figures_path, results_path = results_path, run_pathway_enrichment = T) 
@@ -1602,10 +1609,44 @@ saveRDS(seurat, file = here('data/MAIT_Abau_Ftula_CT_Lungs.rds'))
 
 Here I implement pseudobulk analysis utilizing the biological replicates of the experiment (this is one of the preferred approaches in the literature, and statistically more sound than using Wilcoxon test considering each cell as a replicate)
 
-Please note that more informative pathway enrichment analysis results can be obtained from Metascape.org
+
 
 ```{r}
 seurat <- readRDS(here('data/MAIT_Abau_Ftula_CT_Lungs.rds'))
+```
+
+```{r}
+#| fig-width: 7
+#| #| fig-height: 7
+#| layout-ncol: 2
+#| results: hide
+source(here('scripts/metascape_functions.r'))
+pathway_enrichment <- TRUE 
+
+path <- here(results_path, 'DEG_pseudobulk_analysis_Abau_vs_Ftula')
+
+dir.create(path)
+Idents(seurat) <- 'seurat_clusters'
+
+DEG_counts <- data.frame(matrix(ncol=3, nrow=0))
+colnames(DEG_counts) <- c('DEG_count', 'DEG_UP_count', 'DEG_DOWN_count')
+rnames <- c()
+
+DEG_counts <- pseudobulk(seurat, comparison='Samples', group1='Ftula', group2='Abau', cluster= 'all_MAITs' , path=path, label_threshold = 10000, max_overlaps = 20,gene_lists_to_plot = NA, FC_threshold = 1,p_value_threshold = 0.05, run_pathway_enrichment = pathway_enrichment)
+rnames <- c(rnames, 'all_MAITs')
+
+# for (x in levels(seurat$seurat_clusters)) {
+#     # cat(paste0("Cell type: ", x, "\n"))
+#     seurat_small <- subset(seurat, subset = seurat_clusters == x )
+#     counts <- pseudobulk(seurat_small, comparison='Samples', group1='Ftula', group2='Abau', cluster= x , path=path, label_threshold = 10000, max_overlaps = 15,gene_lists_to_plot = NA, FC_threshold = 1,p_value_threshold = 0.05, run_pathway_enrichment = gProfiler2)
+#     rm(seurat_small)
+#     DEG_counts <- rbind(DEG_counts, counts)
+#     rnames <- c(rnames, x)
+# }
+
+# rownames(DEG_counts) <- rnames
+write.csv(DEG_counts, file = file.path(path, "DEG_counts.csv"))
+DEG_counts
 ```
 
 ```{r}
@@ -1614,9 +1655,9 @@ seurat <- readRDS(here('data/MAIT_Abau_Ftula_CT_Lungs.rds'))
 #| layout-ncol: 2
 #| results: hide
 
-gProfiler2 <- TRUE 
+pathway_enrichment <- TRUE 
 
-path <- here(results_path, 'DEG_pseudobulk_analysis_Lymphocytes_Abau_vs_Ftula_seurat_clusters')
+path <- here(results_path, 'DEG_pseudobulk_analysis_Abau_vs_CT')
 dir.create(path)
 Idents(seurat) <- 'seurat_clusters'
 
@@ -1624,18 +1665,53 @@ DEG_counts <- data.frame(matrix(ncol=3, nrow=0))
 colnames(DEG_counts) <- c('DEG_count', 'DEG_UP_count', 'DEG_DOWN_count')
 rnames <- c()
 
-DEG_counts <- pseudobulk(seurat, comparison='Samples', group1='Ftula', group2='Abau', cluster= 'all_MAITs' , path=path, label_threshold = 10000, max_overlaps = 20,gene_lists_to_plot = NA, FC_threshold = 1,p_value_threshold = 0.05, run_gProfiler2 = gProfiler2)
+DEG_counts <- pseudobulk(seurat, comparison='Samples', group1='CT', group2='Abau', cluster= 'all_MAITs' , path=path, label_threshold = 10000, max_overlaps = 20,gene_lists_to_plot = NA, FC_threshold = 1,p_value_threshold = 0.05, run_pathway_enrichment = pathway_enrichment)
 rnames <- c(rnames, 'all_MAITs')
 
-for (x in levels(seurat$seurat_clusters)) {
-    # cat(paste0("Cell type: ", x, "\n"))
-    seurat_small <- subset(seurat, subset = seurat_clusters == x )
-    counts <- pseudobulk(seurat_small, comparison='Samples', group1='Ftula', group2='Abau', cluster= x , path=path, label_threshold = 10000, max_overlaps = 15,gene_lists_to_plot = NA, FC_threshold = 1,p_value_threshold = 0.05, run_gProfiler2 = gProfiler2)
-    rm(seurat_small)
-    DEG_counts <- rbind(DEG_counts, counts)
-    rnames <- c(rnames, x)
-}
-rownames(DEG_counts) <- rnames
+# for (x in levels(seurat$seurat_clusters)) {
+#     # cat(paste0("Cell type: ", x, "\n"))
+#     seurat_small <- subset(seurat, subset = seurat_clusters == x )
+#     counts <- pseudobulk(seurat_small, comparison='Samples', group1='Ftula', group2='CT', cluster= x , path=path, label_threshold = 10000, max_overlaps = 15,gene_lists_to_plot = NA, FC_threshold = 1,p_value_threshold = 0.05, run_pathway_enrichment = gProfiler2)
+#     rm(seurat_small)
+#     DEG_counts <- rbind(DEG_counts, counts)
+#     rnames <- c(rnames, x)
+# }
+
+# rownames(DEG_counts) <- rnames
+write.csv(DEG_counts, file = file.path(path, "DEG_counts.csv"))
+DEG_counts
+```
+
+```{r}
+#| fig-width: 7
+#| fig-height: 7
+#| layout-ncol: 2
+#| results: hide
+
+pathway_enrichment <- TRUE 
+
+path <- here(results_path, 'DEG_pseudobulk_analysis_Ftula_vs_CT')
+dir.create(path)
+Idents(seurat) <- 'seurat_clusters'
+
+DEG_counts <- data.frame(matrix(ncol=3, nrow=0))
+colnames(DEG_counts) <- c('DEG_count', 'DEG_UP_count', 'DEG_DOWN_count')
+rnames <- c()
+
+DEG_counts <- pseudobulk(seurat, comparison='Samples', group1='
+', group2='Ftula', cluster= 'all_MAITs' , path=path, label_threshold = 10000, max_overlaps = 20,gene_lists_to_plot = NA, FC_threshold = 1,p_value_threshold = 0.05, run_pathway_enrichment = pathway_enrichment)
+rnames <- c(rnames, 'all_MAITs')
+
+# for (x in levels(seurat$seurat_clusters)) {
+#     # cat(paste0("Cell type: ", x, "\n"))
+#     seurat_small <- subset(seurat, subset = seurat_clusters == x )
+#     counts <- pseudobulk(seurat_small, comparison='Samples', group1='Ftula', group2='CT', cluster= x , path=path, label_threshold = 10000, max_overlaps = 15,gene_lists_to_plot = NA, FC_threshold = 1,p_value_threshold = 0.05, run_pathway_enrichment = gProfiler2)
+#     rm(seurat_small)
+#     DEG_counts <- rbind(DEG_counts, counts)
+#     rnames <- c(rnames, x)
+# }
+
+# rownames(DEG_counts) <- rnames
 write.csv(DEG_counts, file = file.path(path, "DEG_counts.csv"))
 DEG_counts
 ```
@@ -1807,7 +1883,6 @@ system(cmd)
 
 ```{r}
 k_used <- 6
-paste()
 
 usage_file <- paste(data_dir[1:length(data_dir)], runname, paste(runname, ".usages", ".k_", k_used, ".dt_0_1", '.consensus', '.txt', sep=""), sep="/")
 spectra_score_file <- paste(data_dir[1:length(data_dir)], runname, paste(runname, ".gene_spectra_score", ".k_", k_used, ".dt_0_1", '.txt', sep=""), sep="/")
@@ -1831,7 +1906,8 @@ usage_norm <- as.data.frame(t(apply(usage, 1, function(x) x / sum(x))))
 ```
 
 
-#### Visualizing gene expression programs on UMAP
+#### Visualizing gene expression programs 
+
 ```{r}
 #| fig-width: 16
 #| fig-height: 20
@@ -1847,7 +1923,19 @@ seurat@meta.data <- seurat@meta.data |>
 
 FeaturePlot_scCustom(seurat, features = colnames(usage_norm), colors_use = sequential_palette, num_columns = 3)
 
+```
 
+```{r}
+#| layout-ncol: 2
+# Visualization
+signature_violin_plot <- function (signature) {
+    plot1 <- VlnPlot(seurat, features = paste0(signature, ''), group.by = 'Groups', pt.size = 0) + labs(title = signature) + NoLegend()
+    print(plot1)
+    ggsave(plot = plot1, filename = paste0('VlnPlot_', k_used, signature, '_by_group_', object_annotations, '.pdf'), path = local_path, width = 5, height = 4)
+}
+for (signature in colnames(usage_norm)) {
+    signature_violin_plot(signature) 
+}
 ```
 
 #### Interpreting Top genes per gene expression program
@@ -1907,15 +1995,14 @@ topn |> knitr::kable()
 ```
 
 ```{r}
-#| layout-ncol: 3
-local_path_ggprofiler <- here('results', 'cNMF', paste0('pathway_enrichment_k_', k_used))
-dir.create(local_path_ggprofiler, recursive = T)
-source(here('scripts/gProfiler2_functions.r'))
+#| layout-ncol: 2
+local_path_metascape <- here('results', 'cNMF', paste0('pathway_enrichment_k_', k_used))
+dir.create(local_path_metascape, recursive = T)
 
 for (gene_expression_program in colnames((top_colnames))) {
-    
-    # top_colnames |> pull(gene_expression_program) |> print()
-    gProfiler2_overrepresentation_analysis(top_colnames |> pull(gene_expression_program), local_path = local_path_ggprofiler, group = 'cNMF', cluster = gene_expression_program, filename = paste0(gene_expression_program, '_'), p_value_threshold = 0.05, highlighted = F)
+    local_path_metascape_2 <- here(local_path_metascape, gene_expression_program)
+    dir.create(local_path_metascape_2, recursive = T)
+    Metascape_overrepresentation_analysis(top_colnames |> pull(gene_expression_program), path = local_path_metascape_2, group = 'cNMF', grouping_var = gene_expression_program, filename = paste0(gene_expression_program, '_'))
 } 
 
 ```
@@ -1936,7 +2023,6 @@ system(cmd)
 
 ```{r}
 k_used <- 9
-paste()
 
 usage_file <- paste(data_dir[1:length(data_dir)], runname, paste(runname, ".usages", ".k_", k_used, ".dt_0_1", '.consensus', '.txt', sep=""), sep="/")
 spectra_score_file <- paste(data_dir[1:length(data_dir)], runname, paste(runname, ".gene_spectra_score", ".k_", k_used, ".dt_0_1", '.txt', sep=""), sep="/")
@@ -1960,7 +2046,8 @@ usage_norm <- as.data.frame(t(apply(usage, 1, function(x) x / sum(x))))
 ```
 
 
-#### Visualizing gene expression programs on UMAP
+#### Visualizing gene expression programs
+
 ```{r}
 #| fig-width: 16
 #| fig-height: 20
@@ -1972,11 +2059,157 @@ seurat@meta.data <- seurat@meta.data |>
     mutate(barcode = barcodes) |>
     left_join(usage_norm |> rownames_to_column('barcode'), by  = 'barcode') |>
     column_to_rownames('barcode')
-
-
 FeaturePlot_scCustom(seurat, features = colnames(usage_norm), colors_use = sequential_palette, num_columns = 3)
+```
+
+```{r}
+#| layout-ncol: 2
+# Visualization
+signature_violin_plot <- function (signature) {
+    plot1 <- VlnPlot(seurat, features = paste0(signature, ''), group.by = 'Groups', pt.size = 0) + labs(title = signature) + NoLegend()
+    print(plot1)
+    ggsave(plot = plot1, filename = paste0('VlnPlot_', k_used, signature, '_by_group_', object_annotations, '.pdf'), path = local_path, width = 5, height = 4)
+}
+for (signature in colnames(usage_norm)) {
+    signature_violin_plot(signature) 
+}
+```
+
+#### Interpreting Top genes per gene expression program
+
+```{r}
+get_top_colnames <- function(row) {
+  # Orders the values in descending order and gets the names of the top 20
+#   print(row[1:5])
+  top_indices <- order(row, decreasing = TRUE)[1:50]
+  return(colnames(spectra_score)[top_indices])
+}
+
+top_colnames <- apply(spectra_score, 1, get_top_colnames)
+top_colnames <- as.data.frame(top_colnames)
+
+#Add gene annotations:
+annotations <- read.csv(here("scripts/annotations.csv"))
+top_colnames_long <- top_colnames |> 
+    pivot_longer(everything(), names_to = 'gene_expression_program', values_to = 'gene')  |>
+    mutate(gene_expression_program = factor(gene_expression_program, levels = colnames(top_colnames))) |>
+    arrange(gene_expression_program) |>
+    left_join(y= unique(annotations[,c('gene_name', 'description')]), by = c('gene' = 'gene_name'))
+write.table(top_colnames_long,file=here(local_path, paste0('top50_per_gene_program_k_', k_used, ".tsv")), sep="\t",row.names = FALSE)
+```
+
+```{r}
+#| fig-width: 12
+#| fig-height: 20
+#Top6 markers
+top_colnames_long %>%
+    group_by(gene_expression_program) %>%
+    slice_head(n = 6) -> topn
+
+gene_list_plot <- topn |> pull(gene)
+
+gene_list_plot <- gene_list_plot |> unique() |> rev()
+Idents(seurat) <- 'seurat_clusters'
+DotPlot_scCustom(seurat, 
+                scale = F,
+                features = gene_list_plot,
+                colors_use=sequential_palette_dotplot,
+                flip_axes = T,
+                dot.scale = 8,
+                dot.min = 0,
+                scale.min = 0,
+                scale.max = 80,
+                x_lab_rotate = T,
+                y_lab_rotate = F) +
+    theme(axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        legend.title = element_text(size = 14))
+```
+
+```{r}
+head(top_colnames, n = 20) |> knitr::kable()
+topn |> knitr::kable()
+```
+
+```{r}
+
+#| layout-ncol: 3
+local_path_metascape <- here('results', 'cNMF', paste0('pathway_enrichment_k_', k_used))
+dir.create(local_path_metascape, recursive = T)
+
+for (gene_expression_program in colnames((top_colnames))) {
+    local_path_metascape_2 <- here(local_path_metascape, gene_expression_program)
+    dir.create(local_path_metascape_2, recursive = T)
+    Metascape_overrepresentation_analysis(top_colnames |> pull(gene_expression_program), path = local_path_metascape_2, group = 'cNMF', grouping_var = gene_expression_program, filename = paste0(gene_expression_program, '_'))
+} 
+
+```
+
+### cNMF results with K=15
+
+```{r}
+cmd = paste("cnmf consensus --output-dir", data_dir,
+            "--name", runname,
+            '--components', 15,
+            '--local-density-threshold', 0.1,
+            '--show-clustering', sep=" ")
+print(cmd)
+system(cmd)
+```
+
+![](/results/cNMF/cNMF_run/cNMF_run.clustering.k_15.dt_0_1.png)
+
+```{r}
+k_used <- 15
+
+usage_file <- paste(data_dir[1:length(data_dir)], runname, paste(runname, ".usages", ".k_", k_used, ".dt_0_1", '.consensus', '.txt', sep=""), sep="/")
+spectra_score_file <- paste(data_dir[1:length(data_dir)], runname, paste(runname, ".gene_spectra_score", ".k_", k_used, ".dt_0_1", '.txt', sep=""), sep="/")
+spectra_tpm_file <- paste(data_dir[1:length(data_dir)], runname, paste(runname, ".gene_spectra_tpm", ".k_", k_used, ".dt_0_1", '.txt', sep=""), sep="/")
+
+usage <- read.table(usage_file, sep='\t', row.names=1, header=TRUE)
+spectra_score <- read.table(spectra_score_file, sep='\t', row.names=1, header=TRUE)
+spectra_tpm <- read.table(spectra_tpm_file, sep='\t', row.names=1, header=TRUE)
+# head(usage)
+```
 
 
+:::{.content-visible when-meta='verbose'}
+
+For most analyses we normalize the resulting usage file output so that each cell sums to 1. We do that below
+
+:::
+
+```{r}
+usage_norm <- as.data.frame(t(apply(usage, 1, function(x) x / sum(x))))
+```
+
+
+#### Visualizing gene expression programs
+```{r}
+#| fig-width: 16
+#| fig-height: 20
+barcodes <- Cells(seurat)
+
+seurat@meta.data <- seurat@meta.data |>
+    select(-starts_with('X')) |>
+    # select(-barcode) |>
+    mutate(barcode = barcodes) |>
+    left_join(usage_norm |> rownames_to_column('barcode'), by  = 'barcode') |>
+    column_to_rownames('barcode')
+FeaturePlot_scCustom(seurat, features = colnames(usage_norm), colors_use = sequential_palette, num_columns = 3)
+```
+
+```{r}
+#| layout-ncol: 2
+# Visualization
+signature_violin_plot <- function (signature) {
+    plot1 <- VlnPlot(seurat, features = paste0(signature, ''), group.by = 'Groups', pt.size = 0) + labs(title = signature) + NoLegend()
+    print(plot1)
+    ggsave(plot = plot1, filename = paste0('VlnPlot_', k_used, signature, '_by_group_', object_annotations, '.pdf'), path = local_path, width = 5, height = 4)
+}
+for (signature in colnames(usage_norm)) {
+    signature_violin_plot(signature) 
+}
 ```
 
 #### Interpreting Top genes per gene expression program
@@ -2037,17 +2270,17 @@ topn |> knitr::kable()
 
 ```{r}
 #| layout-ncol: 3
-local_path_ggprofiler <- here('results', 'cNMF', paste0('pathway_enrichment_k_', k_used))
-dir.create(local_path_ggprofiler, recursive = T)
-source(here('scripts/gProfiler2_functions.r'))
+local_path_metascape <- here('results', 'cNMF', paste0('pathway_enrichment_k_', k_used))
+dir.create(local_path_metascape, recursive = T)
 
 for (gene_expression_program in colnames((top_colnames))) {
-    
-    # top_colnames |> pull(gene_expression_program) |> print()
-    gProfiler2_overrepresentation_analysis(top_colnames |> pull(gene_expression_program), local_path = local_path_ggprofiler, group = 'cNMF', cluster = gene_expression_program, filename = paste0(gene_expression_program, '_'), p_value_threshold = 0.05, highlighted = F)
+    local_path_metascape_2 <- here(local_path_metascape, gene_expression_program)
+    dir.create(local_path_metascape_2, recursive = T)
+    Metascape_overrepresentation_analysis(top_colnames |> pull(gene_expression_program), path = local_path_metascape_2, group = 'cNMF', grouping_var = gene_expression_program, filename = paste0(gene_expression_program, '_'))
 } 
 
 ```
+
 
 ### cNMF results with K=18 
 
@@ -2088,7 +2321,7 @@ usage_norm <- as.data.frame(t(apply(usage, 1, function(x) x / sum(x))))
 ```
 
 
-#### Visualizing gene expression programs on UMAP
+#### Visualizing gene expression programs 
 ```{r}
 #| fig-width: 16
 #| fig-height: 20
@@ -2100,14 +2333,23 @@ seurat@meta.data <- seurat@meta.data |>
     mutate(barcode = barcodes) |>
     left_join(usage_norm |> rownames_to_column('barcode'), by  = 'barcode') |>
     column_to_rownames('barcode')
-
-
 FeaturePlot_scCustom(seurat, features = colnames(usage_norm), colors_use = sequential_palette, num_columns = 3)
 
 
 ```
 
-#### Interpreting Top genes per gene expression program
+```{r}
+#| layout-ncol: 2
+# Visualization
+signature_violin_plot <- function (signature) {
+    plot1 <- VlnPlot(seurat, features = paste0(signature, ''), group.by = 'Groups', pt.size = 0) + labs(title = signature) + NoLegend()
+    print(plot1)
+    ggsave(plot = plot1, filename = paste0('VlnPlot_', k_used, signature, '_by_group_', object_annotations, '.pdf'), path = local_path, width = 5, height = 4)
+}
+for (signature in colnames(usage_norm)) {
+    signature_violin_plot(signature) 
+}
+```
 
 ```{r}
 
@@ -2186,14 +2428,13 @@ topn |> knitr::kable()
 
 ```{r}
 #| layout-ncol: 3
-local_path_ggprofiler <- here('results', 'cNMF', paste0('pathway_enrichment_k_', k_used))
-dir.create(local_path_ggprofiler, recursive = T)
-source(here('scripts/gProfiler2_functions.r'))
+local_path_metascape <- here('results', 'cNMF', paste0('pathway_enrichment_k_', k_used))
+dir.create(local_path_metascape, recursive = T)
 
 for (gene_expression_program in colnames((top_colnames))) {
-    
-    # top_colnames |> pull(gene_expression_program) |> print()
-    gProfiler2_overrepresentation_analysis(top_colnames |> pull(gene_expression_program), local_path = local_path_ggprofiler, group = 'cNMF', cluster = gene_expression_program, filename = paste0(gene_expression_program, '_'), p_value_threshold = 0.05, highlighted = F)
+    local_path_metascape_2 <- here(local_path_metascape, gene_expression_program)
+    dir.create(local_path_metascape_2, recursive = T)
+    Metascape_overrepresentation_analysis(top_colnames |> pull(gene_expression_program), path = local_path_metascape_2, group = 'cNMF', grouping_var = gene_expression_program, filename = paste0(gene_expression_program, '_'))
 } 
 
 ```
@@ -2220,6 +2461,8 @@ DefaultAssay(seurat) <- 'RNA'
 seurat_sce <- as.SingleCellExperiment(seurat)
 reducedDim(seurat_sce, 'PCA') <- Embeddings(seurat, 'pca')
 reducedDim(seurat_sce, 'UMAP') <- Embeddings(seurat, 'umap')
+
+
 seurat_milo <- Milo(seurat_sce)
 
 k_used <- 30
@@ -2317,18 +2560,72 @@ Clearly some neighborhoods span multiple clusters, which is to be expected given
 It seems that the clusters capture pretty well the DA signal, but we can still try to find genes that are differentially expressed in the neighborhoods that are DA.
 
 ```{r}
+#| layout-ncol: 2
 trajectory_milo <- logNormCounts(trajectory_milo)
-da_results_Abau_vs_Ftula$NhoodGroup <- as.numeric(da_results_Abau_vs_Ftula$SpatialFDR < 0.1 & da_results_Abau_vs_Ftula$logFC < 0, aggregate.samples = T)
-da_results_Abau_vs_Ftula <- findNhoodMarkers(trajectory_milo, da_results_Abau_vs_Ftula, aggregate.samples = T, sample_col = 'Samples')
-# da_results_Abau_vs_Ftula |> head()
-# str(trajectory_milo, max.level = 1)
-# str(seurat_sce, max.level = 1)
-# rowData(seurat_sce) |> rownames()
-# rowData(trajectory_milo) |> rownames()
+
+# Automatic grouping of neighborhoods
+da_results_Abau_vs_Ftula <- groupNhoods(trajectory_milo, da_results_Abau_vs_Ftula, max.lfc.delta = 2, overlap = 1)
+plotNhoodGroups(trajectory_milo, da_results_Abau_vs_Ftula, layout = 'UMAP')
+plotDAbeeswarm(da_results_Abau_vs_Ftula, group.by = 'NhoodGroup')
+
+nhood_markers <- findNhoodGroupMarkers(trajectory_milo, da_results_Abau_vs_Ftula, aggregate.samples = F)
+
+nhood_markers <- nhood_markers |>
+    as_tibble() |>
+    pivot_longer(cols = starts_with('adj'), names_to = 'neighborhood', values_to = 'adj_pval', names_prefix = 'adj.P.Val_')  |>
+    pivot_longer(cols = starts_with('log'), names_to = NULL, values_to = 'logFC')   |>
+    filter(adj_pval < 0.05 & logFC > 0.2) |> 
+    group_by(neighborhood) |>
+    slice_max(order_by = logFC, n = 25) |>
+    ungroup() |>
+    arrange(neighborhood, desc(logFC))
+head(nhood_markers)
+
+#Topn markers
+nhood_markers |> 
+    group_by(neighborhood) %>%
+    arrange(desc(logFC)) |>
+    slice_head(n = 6) -> topn
+
+gene_list_plot <- topn |> pull(GeneID) |> unique() |> rev()
+Idents(seurat) <- 'seurat_clusters'
+DotPlot_scCustom(seurat,
+                features = gene_list_plot,
+                colors_use=sequential_palette_dotplot,
+                flip_axes = T,
+                dot.scale = 8,
+                dot.min = 0,
+                scale.min = 0,
+                scale.max = 80,
+                x_lab_rotate = T,
+                y_lab_rotate = F) +
+    theme(axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        legend.title = element_text(size = 18))
+
+local_path <- here(results_path, paste0('MiloR', '_neighborhood_identification_functional_analysis'))
+unlink(local_path, recursive = T)
+dir.create(local_path)
+for (neighborhood in unique(nhood_markers$neighborhood)) {
+     name <- paste0('Neighborhood_', neighborhood)
+     significant_results <- nhood_markers |> 
+          filter(neighborhood == {{neighborhood}}) |>
+          pull(GeneID) |>
+          unique()
+        if (length(significant_results) < 3) {
+          next
+              }
+  Metascape_overrepresentation_analysis(significant_genes_FC_ordered = significant_results, path = local_path, group = '', filename =  name,  grouping_var =  neighborhood )
+  }
 ```
+
 
 ## Trajectory analysis
 
+```{r}
+BiocManager::install("kstreet13/slingshot")
+renv::install("kstreet13/slingshot")
+```
 ```{r}
 # devtools::install_github("dynverse/dyno")
 # renv::snapshot()
@@ -2815,3 +3112,735 @@ Work in progress
 ### Network graph 
 
 Work in progress
+
+# Clustering with cell cycle regression
+
+```{r}
+seurat <- readRDS(here('data/MAIT_Abau_Ftula_CT_Lungs.rds'))
+```
+
+```{r}
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+seurat <- CellCycleScoring(seurat, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+colnames(seurat@meta.data)
+FeaturePlot_scCustom(seurat, features = c("S.Score", "G2M.Score"), pt.size = 0.5, colors_use = sequential_palette)
+```
+
+## Re Clustering
+
+```{r}
+#| fig-width: 4
+#| #| fig-height: 4
+#| fig-cap: 'Elbow plot showing the percentage of variability represented by by each PC to select number of dimensions '
+
+seurat <- SCTransform(seurat, vars.to.regress = c("S.Score", "G2M.Score"))
+seurat <- quietVDJgenes(seurat)
+
+#Dimensionality reduction
+seurat <- RunPCA(seurat,npcs = 100)
+
+#Determining dimensionality of the dataset
+ElbowPlot(seurat, ndims = 100)
+```
+
+:::{.content-visible when-meta='processing'}
+
+Chosen Number of Dimensions:
+
+:::
+
+```{r}
+# Describe number of dimensions
+
+dimensions  <- 30   
+dimensions
+```
+
+```{r}
+#| fig-cap: UMAP plots showing the clustering results at different resolutions
+#| fig-width: 10
+#| fig-height: 10
+
+seurat <- RunUMAP(seurat, dims=1:dimensions, verbose = F, seed.use = 3514L, n.neighbors = 30, min.dist = 0.3)
+# resolutions <- c(0.25, 0.375, 0.5, 0.625, 0.75, 1, 1.25, 1.5, 1.75)
+resolutions <- c(0.05, 0.1, 0.2, 0.25, 0.3, 0.325, 0.375, 0.5, 0.625)
+# resolutions <- c(0.375)
+seurat <- FindNeighbors(seurat, dims = 1:dimensions, verbose = F)
+seurat <- FindClusters(seurat, resolution = resolutions, verbose = F, algorithm = 4, random.seed = 3514L)
+
+p <- list()
+i <- 1
+for (resolution in resolutions ) {
+    Idents(seurat) <- paste0('SCT_snn_res.', resolution) 
+    p2 <- DimPlot(seurat, reduction = "umap", label = TRUE) + ggtitle(paste0('R ', resolution)) + theme(legend.position = "none")    
+    p[[i]] <- p2
+    i <- i+1
+}
+
+plot <- grid.arrange(grobs = p)
+# ggsave('initial_clustering_results_by_resolution.pdf', path = here('result/figures'), plot = plot)
+```
+
+```{r}
+#renv::install('clustree')
+library(clustree)
+conflicts_prefer(base::setdiff)
+clustree(seurat, prefix = "SCT_snn_res.")
+```
+
+:::{.content-visible when-meta='processing'}
+
+Chosen resolution
+
+:::
+
+```{r}
+resolution <- 0.375
+resolution
+```
+
+:::{.content-visible when-meta='verbose'}
+
+### Save Object
+
+:::
+
+```{r}
+saveRDS(seurat, file = here('data/MAIT_Abau_Ftula_CT_Lungs_cell_cycle.rds'))
+```
+
+# Analysis - without cell cycle genes
+
+```{r}
+seurat <- readRDS(here('data/MAIT_Abau_Ftula_CT_Lungs_cell_cycle.rds'))
+object_annotations <- 'cell_cycle_regressed'
+resolution <- 0.375
+```
+
+## Clustering Results
+
+```{r}
+#| layout-ncol: 2
+Idents(seurat) <- paste0('SCT_snn_res.', resolution)
+seurat[['seurat_clusters']]<- Idents(seurat)
+DimPlot(seurat, reduction = "umap", label = TRUE) + ggtitle(paste0('R ', resolution)) + theme(legend.position = "none")
+ggsave(paste0('UMAP_clusters_R_', resolution, '_', object_annotations, '.pdf'), path = figures_path)
+DimPlot(seurat, reduction = "umap", label = TRUE, split.by = 'Groups', ncol = 2) + ggtitle(paste0('R ', resolution)) + theme(legend.position = "none")
+ggsave(paste0('UMAP_clusters_by_group_R_', resolution, '_', object_annotations, '.pdf'), path = figures_path, width = 5, height = 5)
+DimPlot(seurat, reduction = "umap", label = TRUE, split.by = 'Samples', ncol = 4) + ggtitle(paste0('R ', resolution)) + theme(legend.position = "none")
+ggsave(paste0('UMAP_clusters_by_sample_R_', resolution, '_', object_annotations, '.pdf'), path = figures_path)
+DimPlot(seurat, reduction = "umap", label = FALSE, group.by = 'Groups') + ggtitle(paste0('R ', resolution)) + theme(legend.position = "right")
+```
+
+### Cluster frequency per condition
+
+```{r}
+extract_cell_counts(seurat, seurat_clusters, figures_path, tables_path, object_annotations=object_annotations)
+```
+
+## Top DEGs per cluster
+
+```{r}
+#| layout-ncol: 2
+seurat <- PrepSCTFindMarkers(seurat)
+
+plot1 <- top_genes_per_cluster(seurat, n_genes_to_plot=5, object_annotations, tables_path = tables_path, figures_path = figures_path, results_path = results_path, run_pathway_enrichment = T) 
+```
+
+```{r}
+#| fig-width: 8
+#| fig-height: 12
+print(plot1)
+ggsave(paste0(figures_path, 'DotPlot_Top3_per_cluster', object_annotations, '.pdf'), width = 8, height = 12)
+```
+
+## Plotting Genes of Interest from Wang et al 2024
+
+```{r}
+FeaturePlot_scCustom(seurat, features = c('Rorc', 'Il17a', 'Il17f', 'Icos'), colors_use = sequential_palette)
+FeaturePlot_scCustom(seurat, features = c('Tbx21', 'Ifng', 'Gzmb', 'Cxcr3'), colors_use = sequential_palette)
+FeaturePlot_scCustom(seurat, features = c('Ramp3', 'Sdc1', 'Gzma', 'Gzmk'), colors_use = sequential_palette)
+FeaturePlot_scCustom(seurat, features = c('Klrg1', 'Slamf7', 'Ly6c', 'Itga1'), colors_use = sequential_palette)
+FeaturePlot_scCustom(seurat, features = c('Ccr6', 'Il7r', 'Sdc1', 'Icos'), colors_use = sequential_palette)
+FeaturePlot_scCustom(seurat, features = c('Pdcd1', 'Ctla4', 'Ly6a', 'S1pr5'), colors_use = sequential_palette)
+
+```
+
+## Looking at tissue dissociation stress markers
+
+```{r}
+seurat[['percent.hsp']] <- PercentageFeatureSet(seurat, assay="RNA",pattern = "^Hsp")
+FeaturePlot_scCustom(seurat, features = c('percent.hsp'), colors_use = sequential_palette)
+FeaturePlot_scCustom(seurat, features = c('Fos', 'Jun', 'percent.hsp'), colors_use = sequential_palette)
+VlnPlot(seurat, features = c('percent.hsp', 'Jun'), group.by = 'seurat_clusters', pt.size = 0.1) + NoLegend()
+```
+
+
+## Signatures in manuscript
+
+```{r}
+
+DefaultAssay(seurat) <- 'SCT'
+signatures_table <- read_excel(here('data/Hagoulet_signatures.xlsx'), skip = 1)
+signatures_table <- signatures_table |>
+    dplyr::filter(!(row_number() == 1)) |>
+    dplyr::select(-Signature) 
+
+vector <- signatures_table$ISG |> purrr::discard(is.na)
+
+signatures <- map(.x = signatures_table, .f = ~ purrr::discard(.x, is.na))
+
+# Removing genes that are not detected
+blacklist_elements <- c('H2afz','Smsc2','Hist1h2ap','Flg','Flg2','Bmp2','Bmp4','Ngf','Fgf7','Fgf10','Fgf22','Igf1','Ctgf','Mmp3','Mmp13','Defb1','Defb6','Epgn','Mmp2','Angpt1','Hgf','Cyr61','Inhbb','Btc','Ereg','Lep','Vegfc','Vegfd','Pdgfc','Cxcl12','Shh','Dhh','Ihh','Dll3','Dll4','Wnt1','Wnt2','Wnt3a','Wnt5a','Wnt6','Wnt7a','Wnt7b','Wnt8a','Wnt8b','Wnt9a','Wnt9b','Wnt10a','Wnt16','Chat','Thbs1','Fam46a','Kcna4','Fam129b','Tdpoz4','Rassf6','Ero1l','Cd244','A430078G23Rik','D1Ertd622e','Fam49a')
+
+signatures <- map(.x = signatures, .f = ~ .x[!(.x %in% blacklist_elements)])
+
+
+```
+
+### Implementing signatures with UCell
+
+```{r}
+seurat <- AddModuleScore_UCell(seurat, features = signatures, name = NULL)
+
+# Scale signatures (z-score) for comparison and visualization purposes
+seurat@meta.data  <-  seurat@meta.data |>
+    mutate(across(names(signatures), ~ scale(.x, center = T, scale = T), .names = '{col}_scaled'))
+```
+
+### Violin Plots of signatures
+Violin plots showing the distribution of signature scores (z-scored) across the different conditions
+
+```{r}
+#| layout-ncol: 3
+
+# Visualization
+signature_violin_plot <- function (signature) {
+    plot1 <- VlnPlot(seurat, features = paste0(signature, '_scaled'), group.by = 'Groups', pt.size = 0) + labs(title = signature) + NoLegend()
+    print(plot1)
+    ggsave(plot = plot1, filename = paste0('VlnPlot_', signature, '_by_group_', object_annotations, '.pdf'), path = figures_path, width = 5, height = 4)
+}
+for (signature in names(signatures)) {
+    signature_violin_plot(signature) 
+}
+
+
+```
+
+Violin plots showing the distribution of signature scores (z-scored) across the different conditions
+
+```{r}
+#| layout-ncol: 3
+
+# Visualization
+signature_violin_plot <- function (signature) {
+    plot1 <- VlnPlot(seurat, features = paste0(signature, '_scaled'), group.by = 'seurat_clusters', pt.size = 0) + NoLegend() + labs(title = signature)
+    print(plot1)
+    ggsave(plot = plot1, filename = paste0('VlnPlot_', signature, '_by_seurat_clusters_', object_annotations, '.pdf'), path = figures_path, width = 8, height = 4)
+}
+for (signature in names(signatures)) {
+    signature_violin_plot(signature) 
+}
+
+```
+
+### Dot Plots of Signature genes
+Dot plots showing the expression of signature genes across the different Groups
+
+```{r}
+#| fig-width: 4
+#| fig-height: 12
+#| layout-ncol: 4 
+
+signature_dot_plot <- function (signature) {
+    plot1 <- DotPlot_scCustom(seurat, features = signatures[[signature]] |> rev() |> unique() , group.by = 'Groups', colors_use = sequential_palette_dotplot, flip_axes = T, scale = F, dot.scale = 6) + labs(title = signature)
+    print(plot1)
+    ggsave(plot = plot1, filename = paste0('DotPlot_', signature, '_by_groups_', object_annotations, '.pdf'), path = figures_path, width = 5, height = length(signatures[[signature]])/4 + 1)
+}
+for (signature in names(signatures)) {
+    signature_dot_plot(signature) 
+}
+
+```
+
+### FeaturePlots of Signatures 
+FeaturePlots showing the expression of signatures across the UMAP
+
+```{r}
+#| layout-ncol: 2
+
+diverging_palette_2 <- hcl.colors(n = 20,'RdBu',rev = T)
+signature_feature_plot <- function (signature) {
+    min_value  <-  min(seurat@meta.data |> pull(paste0(signature, '_scaled')))
+    max_value  <-  max(seurat@meta.data |> pull(paste0(signature, '_scaled')))
+    cut_off_value <- min(abs(min_value), abs(max_value))
+    plot1 <- FeaturePlot_scCustom(seurat, features = paste0(signature, '_scaled'), colors_use = diverging_palette_2, na_cutoff=NULL, min.cutoff = -1*cut_off_value, max.cutoff = cut_off_value) + labs(title = signature)
+    print(plot1)
+    ggsave(plot = plot1, filename = paste0('FeaturePlot Underscore', signature, '_', object_annotations, '.pdf'), path = figures_path, width = 5, height = 5)
+}
+for (signature in names(signatures)) {
+    signature_feature_plot(signature) 
+}
+
+FeaturePlot_scCustom(seurat, features = c('Sell', 'Lef1', 'S1pr1', 'Cd44'), colors_use = sequential_palette)
+DotPlot_scCustom(seurat, features = c('Sell', 'Lef1', 'S1pr1', 'Cd44') , group.by = 'seurat_clusters', colors_use = sequential_palette_dotplot, flip_axes = T, scale = T, dot.scale = 6) + labs(title = 'LN MAIT cell markers')
+```
+
+:::{.content-visible when-meta='verbose'}
+
+### Save Object
+
+:::
+
+```{r}
+saveRDS(seurat, file = here('data/MAIT_Abau_Ftula_CT_Lungs_cell_cycle.rds'))
+```
+
+## Differential gene expression analysis  - Without cell cycle genes
+
+Here I implement pseudobulk analysis utilizing the biological replicates of the experiment (this is one of the preferred approaches in the literature, and statistically more sound than using Wilcoxon test considering each cell as a replicate)
+
+I remove cell cycle genes to uncover other differences between the conditions.
+
+```{r}
+seurat <- readRDS(here('data/MAIT_Abau_Ftula_CT_Lungs_cell_cycle.rds'))
+s.genes <- s.genes |> str_to_title()
+g2m.genes <- g2m.genes |> str_to_title()
+```
+
+```{r}
+#| fig-width: 7
+#| #| fig-height: 7
+#| layout-ncol: 2
+#| results: hide
+source(here('scripts/metascape_functions.r'))
+source(here('scripts/function_template.r'))
+pathway_enrichment <- TRUE 
+
+path <- here(results_path, paste0('DEG_pseudobulk_analysis_Abau_vs_Ftula', object_annotations))
+dir.create(path)
+
+Idents(seurat) <- 'seurat_clusters'
+
+DEG_counts <- data.frame(matrix(ncol=3, nrow=0))
+colnames(DEG_counts) <- c('DEG_count', 'DEG_UP_count', 'DEG_DOWN_count')
+rnames <- c()
+
+DEG_counts <- pseudobulk(seurat, comparison='Samples', group1='Ftula', group2='Abau', cluster= 'all_MAITs' , path=path, label_threshold = 10000, max_overlaps = 20,gene_lists_to_plot = NA, FC_threshold = 1,p_value_threshold = 0.05, run_pathway_enrichment = pathway_enrichment, genes_to_exclude = c(s.genes, g2m.genes))
+rnames <- c(rnames, 'all_MAITs')
+
+# for (x in levels(seurat$seurat_clusters)) {
+#     # cat(paste0("Cell type: ", x, "\n"))
+#     seurat_small <- subset(seurat, subset = seurat_clusters == x )
+#     counts <- pseudobulk(seurat_small, comparison='Samples', group1='Ftula', group2='Abau', cluster= x , path=path, label_threshold = 10000, max_overlaps = 15,gene_lists_to_plot = NA, FC_threshold = 1,p_value_threshold = 0.05, run_pathway_enrichment = gProfiler2)
+#     rm(seurat_small)
+#     DEG_counts <- rbind(DEG_counts, counts)
+#     rnames <- c(rnames, x)
+# }
+
+# rownames(DEG_counts) <- rnames
+write.csv(DEG_counts, file = file.path(path, "DEG_counts.csv"))
+DEG_counts
+```
+
+```{r}
+#| fig-width: 7
+#| fig-height: 7
+#| layout-ncol: 2
+#| results: hide
+
+pathway_enrichment <- TRUE 
+
+path <- here(results_path, paste0('DEG_pseudobulk_analysis_Abau_vs_CT', object_annotations))
+dir.create(path)
+Idents(seurat) <- 'seurat_clusters'
+
+DEG_counts <- data.frame(matrix(ncol=3, nrow=0))
+colnames(DEG_counts) <- c('DEG_count', 'DEG_UP_count', 'DEG_DOWN_count')
+rnames <- c()
+
+DEG_counts <- pseudobulk(seurat, comparison='Samples', group1='CT', group2='Abau', cluster= 'all_MAITs' , path=path, label_threshold = 10000, max_overlaps = 20,gene_lists_to_plot = NA, FC_threshold = 1,p_value_threshold = 0.05, run_pathway_enrichment = pathway_enrichment)
+rnames <- c(rnames, 'all_MAITs')
+
+# for (x in levels(seurat$seurat_clusters)) {
+#     # cat(paste0("Cell type: ", x, "\n"))
+#     seurat_small <- subset(seurat, subset = seurat_clusters == x )
+#     counts <- pseudobulk(seurat_small, comparison='Samples', group1='Ftula', group2='CT', cluster= x , path=path, label_threshold = 10000, max_overlaps = 15,gene_lists_to_plot = NA, FC_threshold = 1,p_value_threshold = 0.05, run_pathway_enrichment = gProfiler2)
+#     rm(seurat_small)
+#     DEG_counts <- rbind(DEG_counts, counts)
+#     rnames <- c(rnames, x)
+# }
+
+# rownames(DEG_counts) <- rnames
+write.csv(DEG_counts, file = file.path(path, "DEG_counts.csv"))
+DEG_counts
+```
+
+```{r}
+#| fig-width: 7
+#| fig-height: 7
+#| layout-ncol: 2
+#| results: hide
+
+pathway_enrichment <- TRUE 
+
+path <- here(results_path, paste0('DEG_pseudobulk_analysis_Ftula_vs_CT', object_annotations))
+dir.create(path)
+Idents(seurat) <- 'seurat_clusters'
+
+DEG_counts <- data.frame(matrix(ncol=3, nrow=0))
+colnames(DEG_counts) <- c('DEG_count', 'DEG_UP_count', 'DEG_DOWN_count')
+rnames <- c()
+
+DEG_counts <- pseudobulk(seurat, comparison='Samples', group1='
+', group2='Ftula', cluster= 'all_MAITs' , path=path, label_threshold = 10000, max_overlaps = 20,gene_lists_to_plot = NA, FC_threshold = 1,p_value_threshold = 0.05, run_pathway_enrichment = pathway_enrichment)
+rnames <- c(rnames, 'all_MAITs')
+
+# for (x in levels(seurat$seurat_clusters)) {
+#     # cat(paste0("Cell type: ", x, "\n"))
+#     seurat_small <- subset(seurat, subset = seurat_clusters == x )
+#     counts <- pseudobulk(seurat_small, comparison='Samples', group1='Ftula', group2='CT', cluster= x , path=path, label_threshold = 10000, max_overlaps = 15,gene_lists_to_plot = NA, FC_threshold = 1,p_value_threshold = 0.05, run_pathway_enrichment = gProfiler2)
+#     rm(seurat_small)
+#     DEG_counts <- rbind(DEG_counts, counts)
+#     rnames <- c(rnames, x)
+# }
+
+# rownames(DEG_counts) <- rnames
+write.csv(DEG_counts, file = file.path(path, "DEG_counts.csv"))
+DEG_counts
+```
+
+
+## cNMF analysis: Consensus non negative matrix factorization
+
+```{r}
+seurat <- readRDS(here('data/MAIT_Abau_Ftula_CT_Lungs_cell_cycle.rds'))
+```
+
+```{r}
+library(Matrix)
+local_path <- here(results_path, 'cNMF')
+# unlink(local_path, recursive = T)
+dir.create(local_path)
+local_path_input <- here(results_path, 'cNMF','input')
+# unlink(local_path_input, recursive = T)
+dir.create(local_path_input)
+local_path_input
+
+filtered_dir  <- local_path_input
+data_dir <- local_path
+runname = "cNMF_run"
+```
+
+### cNMF results with K=9
+
+```{r}
+k_used <- 9
+
+usage_file <- paste(data_dir[1:length(data_dir)], runname, paste(runname, ".usages", ".k_", k_used, ".dt_0_1", '.consensus', '.txt', sep=""), sep="/")
+spectra_score_file <- paste(data_dir[1:length(data_dir)], runname, paste(runname, ".gene_spectra_score", ".k_", k_used, ".dt_0_1", '.txt', sep=""), sep="/")
+spectra_tpm_file <- paste(data_dir[1:length(data_dir)], runname, paste(runname, ".gene_spectra_tpm", ".k_", k_used, ".dt_0_1", '.txt', sep=""), sep="/")
+
+usage <- read.table(usage_file, sep='\t', row.names=1, header=TRUE)
+spectra_score <- read.table(spectra_score_file, sep='\t', row.names=1, header=TRUE)
+spectra_tpm <- read.table(spectra_tpm_file, sep='\t', row.names=1, header=TRUE)
+# head(usage)
+```
+
+
+:::{.content-visible when-meta='verbose'}
+
+For most analyses we normalize the resulting usage file output so that each cell sums to 1. We do that below
+
+:::
+
+```{r}
+usage_norm <- as.data.frame(t(apply(usage, 1, function(x) x / sum(x))))
+```
+
+
+#### Visualizing gene expression programs on UMAP
+```{r}
+#| fig-width: 16
+#| fig-height: 20
+barcodes <- Cells(seurat)
+
+seurat@meta.data <- seurat@meta.data |>
+    select(-starts_with('X')) |>
+    # select(-barcode) |>
+    mutate(barcode = barcodes) |>
+    left_join(usage_norm |> rownames_to_column('barcode'), by  = 'barcode') |>
+    column_to_rownames('barcode')
+
+
+FeaturePlot_scCustom(seurat, features = colnames(usage_norm), colors_use = sequential_palette, num_columns = 3)
+
+
+```
+
+#### Interpreting Top genes per gene expression program
+
+### cNMF results with K=15
+
+```{r}
+k_used <- 15
+
+usage_file <- paste(data_dir[1:length(data_dir)], runname, paste(runname, ".usages", ".k_", k_used, ".dt_0_1", '.consensus', '.txt', sep=""), sep="/")
+spectra_score_file <- paste(data_dir[1:length(data_dir)], runname, paste(runname, ".gene_spectra_score", ".k_", k_used, ".dt_0_1", '.txt', sep=""), sep="/")
+spectra_tpm_file <- paste(data_dir[1:length(data_dir)], runname, paste(runname, ".gene_spectra_tpm", ".k_", k_used, ".dt_0_1", '.txt', sep=""), sep="/")
+
+usage <- read.table(usage_file, sep='\t', row.names=1, header=TRUE)
+spectra_score <- read.table(spectra_score_file, sep='\t', row.names=1, header=TRUE)
+spectra_tpm <- read.table(spectra_tpm_file, sep='\t', row.names=1, header=TRUE)
+# head(usage)
+```
+
+
+```{r}
+usage_norm <- as.data.frame(t(apply(usage, 1, function(x) x / sum(x))))
+```
+
+
+#### Visualizing gene expression programs on UMAP
+```{r}
+#| fig-width: 16
+#| fig-height: 20
+barcodes <- Cells(seurat)
+
+seurat@meta.data <- seurat@meta.data |>
+    select(-starts_with('X')) |>
+    # select(-barcode) |>
+    mutate(barcode = barcodes) |>
+    left_join(usage_norm |> rownames_to_column('barcode'), by  = 'barcode') |>
+    column_to_rownames('barcode')
+
+
+FeaturePlot_scCustom(seurat, features = colnames(usage_norm), colors_use = sequential_palette, num_columns = 3)
+
+
+```
+
+### cNMF results with K=18 
+
+```{r}
+k_used <- 18
+
+usage_file <- paste(data_dir[1:length(data_dir)], runname, paste(runname, ".usages", ".k_", k_used, ".dt_0_1", '.consensus', '.txt', sep=""), sep="/")
+spectra_score_file <- paste(data_dir[1:length(data_dir)], runname, paste(runname, ".gene_spectra_score", ".k_", k_used, ".dt_0_1", '.txt', sep=""), sep="/")
+spectra_tpm_file <- paste(data_dir[1:length(data_dir)], runname, paste(runname, ".gene_spectra_tpm", ".k_", k_used, ".dt_0_1", '.txt', sep=""), sep="/")
+
+usage <- read.table(usage_file, sep='\t', row.names=1, header=TRUE)
+spectra_score <- read.table(spectra_score_file, sep='\t', row.names=1, header=TRUE)
+spectra_tpm <- read.table(spectra_tpm_file, sep='\t', row.names=1, header=TRUE)
+# head(usage)
+```
+
+
+```{r}
+usage_norm <- as.data.frame(t(apply(usage, 1, function(x) x / sum(x))))
+```
+
+
+#### Visualizing gene expression programs on UMAP
+```{r}
+#| fig-width: 16
+#| fig-height: 20
+barcodes <- Cells(seurat)
+
+seurat@meta.data <- seurat@meta.data |>
+    select(-starts_with('X')) |>
+    # select(-barcode) |>
+    mutate(barcode = barcodes) |>
+    left_join(usage_norm |> rownames_to_column('barcode'), by  = 'barcode') |>
+    column_to_rownames('barcode')
+
+
+FeaturePlot_scCustom(seurat, features = colnames(usage_norm), colors_use = sequential_palette, num_columns = 3)
+
+
+```
+
+## MiloR Differential Abundance Analysis - Without cell cycle genes
+
+```{r}
+s.genes <- s.genes |> str_to_title()
+g2m.genes <- g2m.genes |> str_to_title()
+```
+
+```{r}
+library(miloR)
+library(SingleCellExperiment)
+library(scran)
+library(scater)
+seurat <- readRDS(here('data/MAIT_Abau_Ftula_CT_Lungs_cell_cycle.rds'))
+Idents(seurat) <- 'seurat_clusters'
+DimPlot(seurat, reduction = "umap", label = TRUE)
+```
+
+```{r}
+#| layout-ncol: 2
+
+# Convert to SingleCellExperiment
+Idents(seurat) <- 'Samples'
+DefaultAssay(seurat) <- 'RNA'
+seurat_sce <- as.SingleCellExperiment(seurat)
+reducedDim(seurat_sce, 'PCA') <- Embeddings(seurat, 'pca')
+reducedDim(seurat_sce, 'UMAP') <- Embeddings(seurat, 'umap')
+seurat_sce <-  seurat_sce[!rownames(seurat_sce) %in% c(s.genes, g2m.genes), ] 
+seurat_milo <- Milo(seurat_sce)
+
+k_used <- 30
+dimensions <- 30
+
+# Running MiloR
+trajectory_milo <- buildGraph(seurat_milo, k = k_used, d = dimensions, reduced.dim = 'PCA')
+trajectory_milo <- makeNhoods(trajectory_milo, prop = 0.1, k = k_used, d = dimensions, refined = T, reduced_dims = 'PCA')
+
+# Make sure that average neighborhood size is 5 x N_samples, otherwise adjust k
+plotNhoodSizeHist(trajectory_milo)
+
+# Count cells in neighborhoods per sample
+trajectory_milo <- countCells(trajectory_milo, sample = 'Samples', meta.data = data.frame(colData(seurat_milo)))
+head(nhoodCounts(trajectory_milo))
+
+# DA testing preparation
+trajectory_design <- data.frame(colData(trajectory_milo))[, c('Samples', 'Groups')]
+trajectory_design <- distinct(trajectory_design)
+rownames(trajectory_design) <- trajectory_design$Samples
+trajectory_design <- trajectory_design[colnames(nhoodCounts(trajectory_milo)), , drop = FALSE ]
+head(trajectory_design)
+trajectory_milo <- calcNhoodDistance(trajectory_milo, d = dimensions, reduced.dim = 'PCA')
+trajectory_milo <- buildNhoodGraph(trajectory_milo)
+
+
+# Pairwise DA testing using contrasts Abau vs Ftula
+contrast <- c('GroupsAbau - GroupsFtula')
+da_results_Abau_vs_Ftula <- testNhoods(trajectory_milo, design = ~ 0 + Groups, design.df = trajectory_design, model.contrasts = contrast, fdr.weighting = 'graph-overlap', norm.method = 'TMM')
+da_results_Abau_vs_Ftula |> arrange(SpatialFDR) |> head()
+ggplot(da_results_Abau_vs_Ftula, aes(PValue)) +
+    geom_histogram(bins = 50) +
+    theme_classic() +
+    labs(title = 'Histogram of p-values')
+#Visualize Neighborhoods
+neighborhood_graph_plot <- plotNhoodGraphDA(trajectory_milo, da_results_Abau_vs_Ftula, layout = 'UMAP', alpha = 0.1) + 
+    scale_color_gradient(viridis(n = 10)) +
+    labs(title = 'Abau vs Ftula', subtitle = 'MiloR Neighborhoods colored by DA results')
+neighborhood_graph_plot
+ggsave(filename = 'MiloR_Neighborhoods_DA_Abau_vs_Ftula.pdf', path = figures_path, width = 7, height = 5)
+da_results_Abau_vs_Ftula <- annotateNhoods(trajectory_milo, da_results_Abau_vs_Ftula, coldata_col = 'seurat_clusters')
+ggplot(da_results_Abau_vs_Ftula, aes(seurat_clusters_fraction)) + geom_histogram(bins = 50)
+da_results_Abau_vs_Ftula <- da_results_Abau_vs_Ftula |> mutate(seurat_clusters = factor(seurat_clusters, levels = levels(seurat$seurat_clusters) |> rev()))
+plotDAbeeswarm(da_results_Abau_vs_Ftula, group.by = 'seurat_clusters')
+
+# Pairwise DA testing using contrasts Abau vs CT
+contrast <- c('GroupsAbau - GroupsCT')
+da_results_Abau_vs_CT <- testNhoods(trajectory_milo, design = ~ 0 + Groups, design.df = trajectory_design, model.contrasts = contrast, fdr.weighting = 'graph-overlap', norm.method = 'TMM')
+da_results_Abau_vs_CT |> arrange(SpatialFDR) |> head()
+ggplot(da_results_Abau_vs_CT, aes(PValue)) +
+    geom_histogram(bins = 50) +
+    theme_classic() +
+    labs(title = 'Histogram of p-values')
+#Visualize Neighborhoods
+neighborhood_graph_plot <- plotNhoodGraphDA(trajectory_milo, da_results_Abau_vs_CT, layout = 'UMAP', alpha = 0.1) + 
+    scale_color_gradient(viridis(n = 10)) +
+    labs(title = 'Abau vs CT', subtitle = 'MiloR Neighborhoods colored by DA results')
+neighborhood_graph_plot
+ggsave(filename = 'MiloR_Neighborhoods_DA_Abau_vs_CT.pdf', path = figures_path, width = 7, height = 5)
+da_results_Abau_vs_CT <- annotateNhoods(trajectory_milo, da_results_Abau_vs_CT, coldata_col = 'seurat_clusters')
+ggplot(da_results_Abau_vs_CT, aes(seurat_clusters_fraction)) + geom_histogram(bins = 50)
+da_results_Abau_vs_CT <- da_results_Abau_vs_CT |> mutate(seurat_clusters = factor(seurat_clusters, levels = levels(seurat$seurat_clusters) |> rev()))
+plotDAbeeswarm(da_results_Abau_vs_CT, group.by = 'seurat_clusters')
+
+# Pairwise DA testing using contrasts Ftula vs CT
+contrast <- c('GroupsFtula - GroupsCT')
+da_results_Ftula_vs_CT <- testNhoods(trajectory_milo, design = ~ 0 + Groups, design.df = trajectory_design, model.contrasts = contrast, fdr.weighting = 'graph-overlap', norm.method = 'TMM')
+da_results_Ftula_vs_CT |> arrange(SpatialFDR) |> head()
+ggplot(da_results_Ftula_vs_CT, aes(PValue)) +
+    geom_histogram(bins = 50) +
+    theme_classic() +
+    labs(title = 'Histogram of p-values')
+#Visualize Neighborhoods
+neighborhood_graph_plot <- plotNhoodGraphDA(trajectory_milo, da_results_Ftula_vs_CT, layout = 'UMAP', alpha = 0.1) + 
+    scale_color_gradient(viridis(n = 10)) +
+    labs(title = 'Ftula vs CT', subtitle = 'MiloR Neighborhoods colored by DA results')
+neighborhood_graph_plot
+ggsave(filename = 'MiloR_Neighborhoods_DA_Ftula_vs_CT.pdf', path = figures_path, width = 7, height = 5)
+da_results_Ftula_vs_CT <- annotateNhoods(trajectory_milo, da_results_Ftula_vs_CT, coldata_col = 'seurat_clusters')
+ggplot(da_results_Ftula_vs_CT, aes(seurat_clusters_fraction)) + geom_histogram(bins = 50)
+da_results_Ftula_vs_CT <- da_results_Ftula_vs_CT |> mutate(seurat_clusters = factor(seurat_clusters, levels = levels(seurat$seurat_clusters) |> rev()))
+plotDAbeeswarm(da_results_Ftula_vs_CT, group.by = 'seurat_clusters')
+
+```
+
+### Neighborhood differential gene expression analysis
+
+```{r}
+da_results_Abau_vs_Ftula <- annotateNhoods(trajectory_milo, da_results_Abau_vs_Ftula, coldata_col = 'seurat_clusters')
+ggplot(da_results_Abau_vs_Ftula, aes(seurat_clusters_fraction)) + geom_histogram(bins = 50)
+```
+
+Clearly some neighborhoods span multiple clusters, which is to be expected given the continuous nature of the clustering in this dataset.
+
+It seems that the clusters capture pretty well the DA signal, but we can still try to find genes that are differentially expressed in the neighborhoods that are DA.
+
+```{r}
+#| layout-ncol: 2
+trajectory_milo <- logNormCounts(trajectory_milo)
+
+# Automatic grouping of neighborhoods
+da_results_Abau_vs_Ftula <- groupNhoods(trajectory_milo, da_results_Abau_vs_Ftula, max.lfc.delta = 1, overlap = 1) 
+plotNhoodGroups(trajectory_milo, da_results_Abau_vs_Ftula, layout = 'UMAP')
+plotDAbeeswarm(da_results_Abau_vs_Ftula, group.by = 'NhoodGroup')
+
+nhood_markers <- findNhoodGroupMarkers(trajectory_milo, da_results_Abau_vs_Ftula, aggregate.samples = F)
+
+nhood_markers <- nhood_markers |>
+    as_tibble() |>
+    pivot_longer(cols = starts_with('adj'), names_to = 'neighborhood', values_to = 'adj_pval', names_prefix = 'adj.P.Val_')  |>
+    pivot_longer(cols = starts_with('log'), names_to = NULL, values_to = 'logFC')   |>
+    filter(adj_pval < 0.05 & logFC > 0.2) |> 
+    group_by(neighborhood) |>
+    slice_max(order_by = logFC, n = 25) |>
+    ungroup() |>
+    arrange(neighborhood, desc(logFC))
+head(nhood_markers)
+
+#Topn markers
+nhood_markers |> 
+    group_by(neighborhood) %>%
+    arrange(desc(logFC)) |>
+    slice_head(n = 6) -> topn
+
+gene_list_plot <- topn |> pull(GeneID) |> unique() |> rev()
+Idents(seurat) <- 'seurat_clusters'
+DotPlot_scCustom(seurat,
+                features = gene_list_plot,
+                colors_use=sequential_palette_dotplot,
+                flip_axes = T,
+                dot.scale = 8,
+                dot.min = 0,
+                scale.min = 0,
+                scale.max = 80,
+                x_lab_rotate = T,
+                y_lab_rotate = F) +
+    theme(axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        legend.title = element_text(size = 18))
+
+local_path <- here(results_path, paste0('MiloR', '_neighborhood_identification_functional_analysis', object_annotations))
+unlink(local_path, recursive = T)
+dir.create(local_path)
+for (neighborhood in unique(nhood_markers$neighborhood)) {
+     name <- paste0('Neighborhood_', neighborhood)
+     significant_results <- nhood_markers |> 
+          filter(neighborhood == {{neighborhood}}) |>
+          pull(GeneID) |>
+          unique()
+        if (length(significant_results) < 3) {
+          next
+              }
+  Metascape_overrepresentation_analysis(significant_genes_FC_ordered = significant_results, path = local_path, group = '', filename =  name,  grouping_var =  neighborhood )
+  }
+```
+

@@ -304,7 +304,7 @@ volcano_plot <- function (results_scatter, group1, group2, cluster, my_colors, l
 
 # Pseudobulk function
 
-pseudobulk <- function (scRNAseq, comparison, group1, group2, cluster='all_clusters', path='./', FC_threshold = 0.3, p_value_threshold = 0.05, max_overlaps = 15, label_size = 5, pathways_of_interest = NULL, label_threshold = 100000, distance_from_diagonal_threshold = 0.4, gene_lists_to_plot = NULL, expression_threshold_for_gene_list = 20, colors = c('green4', 'darkorchid4'), minimum_cell_number = 10, run_gProfiler2 = FALSE) {
+pseudobulk <- function (scRNAseq, comparison, group1, group2, cluster='all_clusters', path='./', FC_threshold = 0.3, p_value_threshold = 0.05, max_overlaps = 15, label_size = 5, pathways_of_interest = NULL, label_threshold = 100000, distance_from_diagonal_threshold = 0.4, gene_lists_to_plot = NULL, expression_threshold_for_gene_list = 20, colors = c('green4', 'darkorchid4'), minimum_cell_number = 10, run_pathway_enrichment = T, genes_to_exclude = c()) {
 
     # Subset seurat object
     scRNAseq <- subset(scRNAseq, subset = (str_detect(!!as.name(comparison), group1) | str_detect(!!as.name(comparison), group2)))
@@ -346,7 +346,11 @@ pseudobulk <- function (scRNAseq, comparison, group1, group2, cluster='all_clust
                             slot='counts',
                             return.seurat=FALSE)
 
-    counts <- counts$RNA |> as.data.frame()
+    counts <- counts$RNA |> as.data.frame() |>
+                rownames_to_column('genes') |>
+                as_tibble() |>
+                dplyr::select(-any_of(genes_to_exclude)) |>
+                column_to_rownames('genes')
 
     # Run DE Analysis
     #Generate sample level metadata
@@ -439,8 +443,8 @@ pseudobulk <- function (scRNAseq, comparison, group1, group2, cluster='all_clust
     volcano_plot(results_scatter, group1, group2, cluster, my_colors, local_figures_path, FC_threshold, p_value_threshold, max_overlaps = 15, label_size, label_threshold, test_type ='Pseudobulk')
 
     ########## Overrepresentation analysis ##########
-    if (run_gProfiler2) {
-        gProfiler2_functional_analysis(results,  cluster = cluster, , group1 = group1, group2 = group2, path= path , FC_threshold = FC_threshold)
+    if (run_pathway_enrichment) {
+        Metascape_functional_analysis(results,  grouping_var = cluster, group1 = group1, group2 = group2, path= path , FC_threshold = FC_threshold)
         if (!is.null(pathways_of_interest)) {
             pathways_of_interest_analysis(results = results, pathways_of_interest = pathways_of_interest,  cluster = cluster, path = path, group1 = group1, group2 = group2, comparison = comparison)
         }
@@ -463,7 +467,7 @@ pseudobulk <- function (scRNAseq, comparison, group1, group2, cluster='all_clust
 
 # Wilcox DE analysis
 
-DEG_FindMarkers_RNA_assay <- function (scRNAseq, comparison, group1, group2, cluster='all_clusters', path='./', FC_threshold = 0.3, p_value_threshold = 0.05, max_overlaps = 15, label_size = 5, pathways_of_interest = NULL, label_threshold = 100000, distance_from_diagonal_threshold = 0.7, gene_lists_to_plot = NULL, expression_threshold_for_gene_list = 20, colors = c('green4', 'darkorchid4'), minimum_cell_number = 30, run_gProfiler2 = FALSE) {
+DEG_FindMarkers_RNA_assay <- function (scRNAseq, comparison, group1, group2, cluster='all_clusters', path='./', FC_threshold = 0.3, p_value_threshold = 0.05, max_overlaps = 15, label_size = 5, pathways_of_interest = NULL, label_threshold = 100000, distance_from_diagonal_threshold = 0.7, gene_lists_to_plot = NULL, expression_threshold_for_gene_list = 20, colors = c('green4', 'darkorchid4'), minimum_cell_number = 30, run_pathway_enrichment = TRUE) {
 
     # Set colors for the plot
     my_colors <- c(colors, "gray")
@@ -546,8 +550,8 @@ DEG_FindMarkers_RNA_assay <- function (scRNAseq, comparison, group1, group2, clu
     volcano_plot(results_scatter, group1 = group1, group2 = group2, cluster = cluster, my_colors = my_colors, local_figures_path = local_figures_path, FC_threshold = FC_threshold, p_value_threshold = p_value_threshold, max_overlaps = max_overlaps, label_size = label_size, label_threshold = label_threshold, test_type ='Wilcox')
 
     ########## Overrepresentation analysis ##########
-    if (run_gProfiler2) {
-        gProfiler2_functional_analysis(results,  cluster = cluster, , group1 = group1, group2 = group2, path= path , FC_threshold = FC_threshold)
+    if (run_pathway_enrichment) {
+        Metascape_functional_analysis(results,  grouping_var = cluster, , group1 = group1, group2 = group2, path= path , FC_threshold = FC_threshold)
         if (!is.null(pathways_of_interest)) {
             pathways_of_interest_analysis(results = results, pathways_of_interest = pathways_of_interest,  cluster = cluster, path = path, group1 = group1, group2 = group2, comparison = comparison)
         }
@@ -568,7 +572,7 @@ DEG_FindMarkers_RNA_assay <- function (scRNAseq, comparison, group1, group2, clu
     return(c(all_count=DEG_count, UP_count=DEG_UP_count, DOWN_count=DEG_DOWN_count))
 }
 
-DEG_FindMarkers_SCT_assay <- function (scRNAseq, comparison, group1, group2, is_integrated_subset = FALSE, cluster='all_clusters', path='./', FC_threshold = 0.3, p_value_threshold = 0.05, max_overlaps = 15, label_size = 5, pathways_of_interest = NULL, label_threshold = 100000, distance_from_diagonal_threshold = 0.7, gene_lists_to_plot = NULL, expression_threshold_for_gene_list = 20, colors = c('green4', 'darkorchid4'), minimum_cell_number = 30, run_gProfiler2 = FALSE) {
+DEG_FindMarkers_SCT_assay <- function (scRNAseq, comparison, group1, group2, is_integrated_subset = FALSE, cluster='all_clusters', path='./', FC_threshold = 0.3, p_value_threshold = 0.05, max_overlaps = 15, label_size = 5, pathways_of_interest = NULL, label_threshold = 100000, distance_from_diagonal_threshold = 0.7, gene_lists_to_plot = NULL, expression_threshold_for_gene_list = 20, colors = c('green4', 'darkorchid4'), minimum_cell_number = 30, run_pathway_enrichment = TRUE) {
 
     # Set colors for the plot
     my_colors <- c(colors, "gray")
@@ -651,8 +655,8 @@ DEG_FindMarkers_SCT_assay <- function (scRNAseq, comparison, group1, group2, is_
     volcano_plot(results_scatter, group1 = group1, group2 = group2, cluster = cluster, my_colors = my_colors, local_figures_path = local_figures_path, FC_threshold = FC_threshold, p_value_threshold = p_value_threshold, max_overlaps = max_overlaps, label_size = label_size, label_threshold = label_threshold, test_type ='Wilcox')
 
     ########## Overrepresentation analysis ##########
-    if (run_gProfiler2) {
-        gProfiler2_functional_analysis(results,  cluster = cluster, group1 = group1, group2 = group2, path= path , FC_threshold = FC_threshold)
+    if (run_pathway_enrichment) {
+        Metascape_functional_analysis(results,  grouping_var = cluster, group1 = group1, group2 = group2, path= path , FC_threshold = FC_threshold)
         if (!is.null(pathways_of_interest)) {
             pathways_of_interest_analysis(results = results, pathways_of_interest = pathways_of_interest,  cluster = cluster, path = path, group1 = group1, group2 = group2, comparison = comparison)
         }
@@ -676,7 +680,7 @@ DEG_FindMarkers_SCT_assay <- function (scRNAseq, comparison, group1, group2, is_
 
 # Bulk functions
 
-bulk_analysis <- function (counts_table, comparison = 'Groups', group1, group2, cluster='', path='./', FC_threshold = 0.3, p_value_threshold = 0.05, max_overlaps = 15, label_size = 5, pathways_of_interest = NULL, label_threshold = 100000, distance_from_diagonal_threshold = 0.4, gene_lists_to_plot = NULL, expression_threshold_for_gene_list = 20, colors = c('green4', 'darkorchid4'), minimum_cell_number = 10, run_gProfiler2 = FALSE) {
+bulk_analysis <- function (counts_table, comparison = 'Groups', group1, group2, cluster='', path='./', FC_threshold = 0.3, p_value_threshold = 0.05, max_overlaps = 15, label_size = 5, pathways_of_interest = NULL, label_threshold = 100000, distance_from_diagonal_threshold = 0.4, gene_lists_to_plot = NULL, expression_threshold_for_gene_list = 20, colors = c('green4', 'darkorchid4'), minimum_cell_number = 10, run_pathway_enrichment = TRUE) {
 
     # Set colors for the plot
     my_colors <- c(colors, "gray")
@@ -785,8 +789,8 @@ bulk_analysis <- function (counts_table, comparison = 'Groups', group1, group2, 
     volcano_plot(results_scatter, group1, group2, cluster, my_colors, local_figures_path, FC_threshold, p_value_threshold, max_overlaps = 15, label_size, label_threshold, test_type ='Bulk')
 
     ########## Overrepresentation analysis ##########
-    if (run_gProfiler2) {
-        gProfiler2_functional_analysis(results,  cluster = cluster, , group1 = group1, group2 = group2, path= path , FC_threshold = FC_threshold)
+    if (run_pathway_enrichment) {
+        Metascape_functional_analysis(results,  grouping_var = cluster, , group1 = group1, group2 = group2, path= path , FC_threshold = FC_threshold)
         if (!is.null(pathways_of_interest)) {
             pathways_of_interest_analysis(results = results, pathways_of_interest = pathways_of_interest,  cluster = cluster, path = path, group1 = group1, group2 = group2, comparison = comparison)
         }
@@ -1013,7 +1017,7 @@ top_genes_per_cluster <- function (seurat, n_genes_to_plot = 3, object_annotatio
     
     if (run_pathway_enrichment) {
         # Run pathway enrichment analysis
-        gProfiler2_functional_analysis_cluster_identification(seurat, top25, identities = 'seurat_clusters', path=results_path, object_annotations = object_annotations) 
+        Metascape_functional_analysis_cluster_identification(seurat, top25, identities = 'seurat_clusters', path=results_path, object_annotations = object_annotations) 
     }
 
     return(list(plot = plot1))
