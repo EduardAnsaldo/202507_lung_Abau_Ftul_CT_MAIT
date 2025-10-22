@@ -1,0 +1,1424 @@
+---
+title: Analysis of Abau and Ftul infected mice - lungs
+author: Eduard Ansaldo
+date: '`r Sys.Date()`'
+verbose: false
+engine: knitr
+knitr:
+  opts_chunk: 
+    echo: false
+    warning: false
+    message: false
+    error: false
+    cache: true
+    results: markdown
+    code-fold: true
+    cache-lazy: false
+    
+processing: true
+
+execute: 
+  cache: true
+
+
+format:
+  html:
+    embed-resources: true
+    fig-cap-location: top
+    toc: true
+    toc-depth: 3
+
+    toc-expand: 1
+    toc-location: left
+    toc-title: Table of Contents
+    toc-collapse: true
+    number-sections: true
+    page-layout: full
+    fig-width: 6
+    fig-height: 6
+    fig-align: 'center'
+---
+
+::: {.content-visible when-meta="verbose"}
+
+# Initialization
+
+:::
+
+```{r}
+#| cache: false
+# General R and plotting 
+library(conflicted)
+library(tidyverse)
+library(ggplot2)
+library(scales)
+library(patchwork)
+library(cowplot)
+library(gridExtra)
+library(ggrepel)
+library(stringr)
+library(VennDiagram)
+library(pheatmap)
+library(viridis)
+library(here)
+library(readxl)
+library(readxl)
+library(ggbeeswarm)
+library(tidyplots)
+
+# Single Cell Analysis Packages
+library(Seurat)
+library(scRepertoire)
+library(circlize)
+library(scCustomize)
+library(SingleR)
+library(celldex)
+library(UCell)
+library(presto)
+library(scDblFinder)
+library(immunarch)
+
+# DEG, pathway enrichment and visualization packages
+library(DESeq2)
+# library(gprofiler2)
+library(clusterProfiler)
+library(DOSE)
+library(pathview)
+library(org.Mm.eg.db)
+library(scRepertoire)
+library(enrichplot)
+library(msigdbr)
+library(rlang)
+
+# Python Version 3.9.6!!! 
+
+# peconflicts_scout()
+conflicts_prefer(dplyr::filter)
+conflicts_prefer(dplyr::select)
+conflicts_prefer(base::setdiff)
+conflicts_prefer(dplyr::rename)
+conflicts_prefer(base::unname)
+conflicts_prefer(tidyr::expand)
+conflicts_prefer(tidyplots::save_plot)
+
+# Loading custom functions
+source(here('scripts/function_template.r'))
+source(here('scripts/metascape_functions.r'))
+source(here('scripts/circlize_functions.r'))
+source(here('scripts/ClusterProfiler_functions.r'))
+
+```
+
+```{r}
+#| results: hide 
+#| cache: false 
+# Setting working directory and seed
+# renv::update()
+# renv::snapshot()
+# renv::init()
+# renv::status()
+set.seed(3514)
+# i_am('scripts/Analysis.qmd')
+here()
+results_path <- here('results/')
+dir.create(results_path)
+results_path <- here('results/')
+dir.create(results_path)
+figures_path <- here('results/figures/')
+dir.create(figures_path)
+# data_path <- here('data/')
+# dir.create(data_path)
+tables_path <- here('results/tables/')
+dir.create(tables_path)
+
+# Loading custom functions
+source(here('scripts/function_template.r'))
+source(here('scripts/metascape_functions.r'))
+source(here('scripts/circlize_functions.r'))
+
+# Setting up color palettes
+diverging_palette <- hcl.colors(n = 20,'Purple-Green',rev = T)
+sequential_palette_dotplot <- hcl.colors(n = 20,'YlGn',rev = T)
+sequential_palette <- hcl.colors(n = 20,'Mako',rev = T)
+
+knitr::dep_prev()
+```
+
+# Initial notes
+Data was preprocessed in cellranger 9.0.1 Using the intron=true option, and aggregating all three samples to normalize read depth.
+
+:::{.content-visible when-meta='processing'}
+
+# Preprocessing aggregated dataset
+
+:::
+
+```{r}
+
+#| results: hide
+#| #Load the dataset from the cellranger outs
+#| results: hide
+#Load the dataset from the cellranger outs
+scdata <- Read10X(data.dir = here("data/cluster_processing_2/aggr_all/outs/count/filtered_feature_bc_matrix"))
+
+#Initialize the seurat object with the raw (non-normalized data)
+seurat <- CreateSeuratObject(counts=scdata$'Gene Expression', min.cells = 3)
+
+
+# #Add HTO data as a new assay independent from RNA
+HTO <- CreateAssayObject(counts = scdata$'Antibody Capture')
+seurat[["HTO"]] <- HTO
+
+```
+
+:::{.content-visible when-meta='processing'}
+
+## Splitting dataset
+
+:::
+
+```{r}
+
+seurat$barcode <- Cells(seurat)
+seurat@meta.data <- seurat@meta.data |>
+    mutate(GEM = str_extract(barcode, '\\d')) |>
+    mutate(GEM = case_when(
+            GEM == '1' ~ 'CT_MAIT',
+            GEM == '2' ~ 'Ftula_MAIT',
+            GEM == '3' ~ 'Abau_MAIT'
+    )) 
+# Splitting the dataset into the three groups
+seurat_list <- SplitObject(seurat, split.by = 'GEM')
+
+```
+
+:::{.content-visible when-meta='processing'}
+
+# Preprocessing Abau MAIT dataset
+
+:::
+
+:::{.content-visible when-meta='verbose'}
+
+## Read in data
+
+:::
+
+```{r}
+#| results: hide
+
+seurat <- seurat_list$Abau_MAIT
+
+```
+
+:::{.content-visible when-meta='processing'}
+#### Confirming used HTOs - MAIT
+:::
+
+```{r}
+print('Antibody Capture total reads:')
+seurat@assays$HTO$counts |> as.matrix() |>
+        rowSums()  |> as.data.frame() 
+
+HTO_data <- seurat@assays$HTO$counts
+
+# Extracting HTO and biotin data
+HTO_data <-  HTO_data[-c(3), ]
+# colnames(scdata$'HTO') <- colnames(scdata$'Antibody Capture')
+# rownames(scdata$'HTO') <- rownames(scdata$'Antibody Capture')[-c(2, 3, 4, 5, 6, 7, 11, 17, 18, 19)]
+
+# #Add HTO data as a new assay independent from RNA
+HTO <- CreateAssayObject(counts = HTO_data)
+seurat[["HTO"]] <- HTO
+```
+
+Hashtags Used: 1, 2, 4, 5
+
+:::{.content-visible when-meta='processing'}
+
+## QC
+
+:::
+
+```{r}
+#| layout-ncol: 2
+#Quantifying percentage mitochondria
+Idents(seurat) <- 'Tissue'
+seurat[["percent.mt"]] <- PercentageFeatureSet(seurat, assay="RNA",pattern = "mt-")
+
+VlnPlot(seurat, features = c("nCount_RNA", "nFeature_RNA", "percent.mt"), ncol=3, pt.size = 0.01)
+
+# Setting thresholds:
+nCount_RNA_threshold <- 1500
+nFeature_RNA_threshold <- 500
+percent_mt_threshold <- 6
+
+
+p1 <- seurat@meta.data %>% 
+  	ggplot(aes(x=nCount_RNA)) + 
+  	geom_density() + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	ylab("Cell density") +
+  	geom_vline(xintercept = nCount_RNA_threshold)
+
+p2 <- seurat@meta.data %>% 
+  	ggplot(aes(x=nFeature_RNA)) + 
+  	geom_density() + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	ylab("Cell density") +
+  	geom_vline(xintercept = nFeature_RNA_threshold)
+
+p3 <- seurat@meta.data %>% 
+  	ggplot(aes(x=percent.mt)) + 
+  	geom_density() + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	ylab("Cell density") +
+  	geom_vline(xintercept = percent_mt_threshold)
+
+grid.arrange(p1, p2, p3)    
+
+# # Visualize feature relationships
+# # plot1 <- FeatureScatter(seurat, feature1 = "nCount_RNA", feature2 = "percent.mt")
+
+# # plot2 <- FeatureScatter(seurat, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+# # plot1+plot2
+
+cell_number <- list(nrow(seurat[[]]))
+```
+
+Filtering Low Quality Cells
+
+```{r}
+# Filter data
+
+cell_number <- list(nrow(seurat[[]]))
+seurat <- subset(seurat, subset = nFeature_RNA  > nFeature_RNA_threshold & percent.mt < percent_mt_threshold & nCount_RNA > nCount_RNA_threshold)
+cell_number <- append(cell_number, nrow(seurat[[]]))
+
+print("Cell number before and after filterings")
+print(cell_number)
+```
+
+:::{.content-visible when-meta='verbose'}
+## Data Normalization 
+:::
+
+```{r}
+# Normalize RNA data with SCTransform
+# seurat <- SCTransform(seurat, verbose = T)
+
+# Normalize HTO data with CLR
+seurat <- NormalizeData(seurat, assay = "HTO",normalization.method = "CLR")
+```
+
+:::{.content-visible when-meta='processing'}
+## Hashtag Demultiplexing - MAIT
+:::
+
+```{r}
+#| fig-width: 14
+#| fig-height: 10
+plot1 <- seurat@meta.data %>% 
+  	ggplot(aes(x=nCount_HTO)) + 
+  	geom_density() + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	ylab("Cell density") 
+
+plot2 <- seurat@meta.data %>% 
+  	ggplot(aes(x=nFeature_HTO)) + 
+  	geom_density() + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	ylab("Cell density") 
+
+plot1+plot2
+
+seurat <- HTODemux(seurat, assay = "HTO", positive.quantile = 0.99)
+
+table(seurat$HTO_classification.global)
+
+#tSNE-visualization
+seurat_subset <- subset(seurat, idents = "Negative", invert =TRUE)
+DefaultAssay(seurat_subset) <- "HTO"
+seurat_subset <- ScaleData(seurat_subset, assay = "HTO",  features = rownames(seurat_subset), verbose = FALSE )
+seurat_subset <- RunPCA(seurat_subset, assay = "HTO", rownames(seurat_subset), approx = FALSE)
+seurat_subset <- RunTSNE(seurat_subset, assay = "HTO", dims = 1:24,  perplexity = 100, check_duplicates=FALSE)
+DimPlot(seurat_subset)
+```
+
+
+```{r}
+print("Number of Singlets")
+print(nrow(seurat@meta.data |> filter( HTO_classification.global  == 'Singlet')))
+
+print("Number of Doublets")
+print(nrow(seurat@meta.data |> filter( HTO_classification.global  == 'Doublet')))
+
+# Filtering singlets only
+Idents(seurat) <- "HTO_classification.global"
+seurat <-subset(seurat, idents = "Singlet")
+```
+
+:::{.content-visible when-meta='verbose'}
+## Create Groups
+:::
+
+```{r}
+
+seurat@meta.data <- seurat@meta.data |>
+    mutate(Groups = 'Abau') |>
+    mutate(Samples = str_c(Groups, hash.ID, sep = '_')) |> 
+    mutate(Samples = case_when(
+            hash.ID == 'Mouse-4' ~ 'Abau_Mouse-3',
+            hash.ID == 'Mouse-5' ~ 'Abau_Mouse-4',
+            TRUE ~ Samples
+    )) |>
+    mutate(Samples = factor(Samples, levels = c(
+            'Abau_Mouse-1',
+            'Abau_Mouse-2',
+            'Abau_Mouse-3',
+            'Abau_Mouse-4')))
+
+```
+
+```{r}
+seurat_Abau <- seurat
+```
+
+:::{.content-visible when-meta='processing'}
+
+# Preprocessing Ftula MAIT dataset
+
+:::
+
+:::{.content-visible when-meta='verbose'}
+
+## Read in data
+
+:::
+
+```{r}
+#| results: hide
+
+seurat <- seurat_list$Ftula_MAIT
+
+```
+
+:::{.content-visible when-meta='processing'}
+#### Confirming used HTOs 
+:::
+
+```{r}
+print('Antibody Capture total reads:')
+seurat@assays$HTO$counts |> as.matrix() |>
+        rowSums()  |> as.data.frame() 
+
+HTO_data <- seurat@assays$HTO$counts
+
+# Extracting HTO and biotin data
+# HTO_data <-  HTO_data[-c(3), ]
+# colnames(scdata$'HTO') <- colnames(scdata$'Antibody Capture')
+# rownames(scdata$'HTO') <- rownames(scdata$'Antibody Capture')[-c(2, 3, 4, 5, 6, 7, 11, 17, 18, 19)]
+
+# #Add HTO data as a new assay independent from RNA
+HTO <- CreateAssayObject(counts = HTO_data)
+seurat[["HTO"]] <- HTO
+```
+
+Hashtags Used: 1, 2, 3, 4, 5
+
+:::{.content-visible when-meta='processing'}
+
+## QC
+
+:::
+
+```{r}
+#| layout-ncol: 2
+#Quantifying percentage mitochondria
+Idents(seurat) <- 'Tissue'
+seurat[["percent.mt"]] <- PercentageFeatureSet(seurat, assay="RNA",pattern = "mt-")
+
+VlnPlot(seurat, features = c("nCount_RNA", "nFeature_RNA", "percent.mt"), ncol=3, pt.size = 0.01)
+
+# Setting thresholds:
+nCount_RNA_threshold <- 1500
+nFeature_RNA_threshold <- 500
+percent_mt_threshold <- 6
+
+
+p1 <- seurat@meta.data %>% 
+  	ggplot(aes(x=nCount_RNA)) + 
+  	geom_density() + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	ylab("Cell density") +
+  	geom_vline(xintercept = nCount_RNA_threshold)
+
+p2 <- seurat@meta.data %>% 
+  	ggplot(aes(x=nFeature_RNA)) + 
+  	geom_density() + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	ylab("Cell density") +
+  	geom_vline(xintercept = nFeature_RNA_threshold)
+
+p3 <- seurat@meta.data %>% 
+  	ggplot(aes(x=percent.mt)) + 
+  	geom_density() + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	ylab("Cell density") +
+  	geom_vline(xintercept = percent_mt_threshold)
+
+grid.arrange(p1, p2, p3)    
+
+# # Visualize feature relationships
+# # plot1 <- FeatureScatter(seurat, feature1 = "nCount_RNA", feature2 = "percent.mt")
+
+# # plot2 <- FeatureScatter(seurat, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+# # plot1+plot2
+
+cell_number <- list(nrow(seurat[[]]))
+```
+
+Filtering Low Quality Cells
+
+```{r}
+# Filter data
+
+cell_number <- list(nrow(seurat[[]]))
+seurat <- subset(seurat, subset = nFeature_RNA  > nFeature_RNA_threshold & percent.mt < percent_mt_threshold & nCount_RNA > nCount_RNA_threshold)
+cell_number <- append(cell_number, nrow(seurat[[]]))
+
+print("Cell number before and after filterings")
+print(cell_number)
+```
+
+:::{.content-visible when-meta='verbose'}
+## Data Normalization 
+:::
+
+```{r}
+# Normalize RNA data with SCTransform
+# seurat <- SCTransform(seurat, verbose = T)
+
+# Normalize HTO data with CLR
+seurat <- NormalizeData(seurat, assay = "HTO",normalization.method = "CLR")
+```
+
+:::{.content-visible when-meta='processing'}
+## Hashtag Demultiplexing - MAIT
+:::
+
+```{r}
+#| fig-width: 14
+#| fig-height: 10
+plot1 <- seurat@meta.data %>% 
+  	ggplot(aes(x=nCount_HTO)) + 
+  	geom_density() + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	ylab("Cell density") 
+
+plot2 <- seurat@meta.data %>% 
+  	ggplot(aes(x=nFeature_HTO)) + 
+  	geom_density() + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	ylab("Cell density") 
+
+plot1+plot2
+
+seurat <- HTODemux(seurat, assay = "HTO", positive.quantile = 0.97)
+
+table(seurat$hash.ID)
+table(seurat$HTO_classification.global)
+
+#tSNE-visualization
+seurat_subset <- subset(seurat, idents = "Negative", invert =TRUE)
+DefaultAssay(seurat_subset) <- "HTO"
+seurat_subset <- ScaleData(seurat_subset, assay = "HTO",  features = rownames(seurat_subset), verbose = FALSE )
+seurat_subset <- RunPCA(seurat_subset, assay = "HTO", rownames(seurat_subset), approx = FALSE)
+seurat_subset <- RunTSNE(seurat_subset, assay = "HTO", dims = 1:24,  perplexity = 100, check_duplicates=FALSE)
+DimPlot(seurat_subset)
+```
+
+
+```{r}
+print("Number of Singlets")
+print(nrow(seurat@meta.data |> filter( HTO_classification.global  == 'Singlet')))
+
+print("Number of Doublets")
+print(nrow(seurat@meta.data |> filter( HTO_classification.global  == 'Doublet')))
+
+# Filtering singlets only
+Idents(seurat) <- "HTO_classification.global"
+seurat <-subset(seurat, idents = "Singlet")
+```
+
+:::{.content-visible when-meta='verbose'}
+## Create Groups
+:::
+
+```{r}
+
+seurat@meta.data <- seurat@meta.data |>
+    mutate(Groups = 'Ftula') |>
+    mutate(Samples = str_c(Groups, hash.ID, sep = '_')) |> 
+    mutate(Samples = factor(Samples, levels = c(
+            'Ftula_Mouse-1',
+            'Ftula_Mouse-2',
+            'Ftula_Mouse-3',
+            'Ftula_Mouse-4',
+            'Ftula_Mouse-5')))
+
+```
+
+```{r}
+seurat_Ftula <- seurat
+```
+
+:::{.content-visible when-meta='processing'}
+
+# Preprocessing CT MAIT dataset
+
+:::
+
+:::{.content-visible when-meta='verbose'}
+
+## Read in data
+
+:::
+
+```{r}
+#| results: hide
+
+seurat <- seurat_list$CT_MAIT
+
+```
+
+:::{.content-visible when-meta='processing'}
+#### Confirming used HTOs
+:::
+
+```{r}
+print('Antibody Capture total reads:')
+seurat@assays$HTO$counts |> as.matrix() |>
+        rowSums()  |> as.data.frame() 
+
+HTO_data <- seurat@assays$HTO$counts
+
+# Extracting HTO and biotin data
+HTO_data <-  HTO_data[-c(3), ]
+# colnames(scdata$'HTO') <- colnames(scdata$'Antibody Capture')
+# rownames(scdata$'HTO') <- rownames(scdata$'Antibody Capture')[-c(2, 3, 4, 5, 6, 7, 11, 17, 18, 19)]
+
+# #Add HTO data as a new assay independent from RNA
+HTO <- CreateAssayObject(counts = HTO_data)
+seurat[["HTO"]] <- HTO
+```
+
+Hashtags Used: 1, 2, 4, 5
+
+:::{.content-visible when-meta='processing'}
+
+## QC
+
+:::
+
+```{r}
+#| layout-ncol: 2
+#Quantifying percentage mitochondria
+Idents(seurat) <- 'Tissue'
+seurat[["percent.mt"]] <- PercentageFeatureSet(seurat, assay="RNA",pattern = "mt-")
+
+VlnPlot(seurat, features = c("nCount_RNA", "nFeature_RNA", "percent.mt"), ncol=3, pt.size = 0.01)
+
+# Setting thresholds:
+nCount_RNA_threshold <- 1500
+nFeature_RNA_threshold <- 500
+percent_mt_threshold <- 6
+
+
+p1 <- seurat@meta.data %>% 
+  	ggplot(aes(x=nCount_RNA)) + 
+  	geom_density() + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	ylab("Cell density") +
+  	geom_vline(xintercept = nCount_RNA_threshold)
+
+p2 <- seurat@meta.data %>% 
+  	ggplot(aes(x=nFeature_RNA)) + 
+  	geom_density() + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	ylab("Cell density") +
+  	geom_vline(xintercept = nFeature_RNA_threshold)
+
+p3 <- seurat@meta.data %>% 
+  	ggplot(aes(x=percent.mt)) + 
+  	geom_density() + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	ylab("Cell density") +
+  	geom_vline(xintercept = percent_mt_threshold)
+
+grid.arrange(p1, p2, p3)    
+
+# # Visualize feature relationships
+# # plot1 <- FeatureScatter(seurat, feature1 = "nCount_RNA", feature2 = "percent.mt")
+
+# # plot2 <- FeatureScatter(seurat, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+# # plot1+plot2
+
+cell_number <- list(nrow(seurat[[]]))
+```
+
+Filtering Low Quality Cells
+
+```{r}
+# Filter data
+
+cell_number <- list(nrow(seurat[[]]))
+seurat <- subset(seurat, subset = nFeature_RNA  > nFeature_RNA_threshold & percent.mt < percent_mt_threshold & nCount_RNA > nCount_RNA_threshold)
+cell_number <- append(cell_number, nrow(seurat[[]]))
+
+print("Cell number before and after filterings")
+print(cell_number)
+```
+
+:::{.content-visible when-meta='verbose'}
+## Data Normalization 
+:::
+
+```{r}
+# Normalize RNA data with SCTransform
+# seurat <- SCTransform(seurat, verbose = T)
+
+# Normalize HTO data with CLR
+seurat <- NormalizeData(seurat, assay = "HTO",normalization.method = "CLR")
+```
+
+:::{.content-visible when-meta='processing'}
+## Hashtag Demultiplexing - MAIT
+:::
+
+```{r}
+#| fig-width: 14
+#| fig-height: 10
+plot1 <- seurat@meta.data %>% 
+  	ggplot(aes(x=nCount_HTO)) + 
+  	geom_density() + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	ylab("Cell density") 
+
+plot2 <- seurat@meta.data %>% 
+  	ggplot(aes(x=nFeature_HTO)) + 
+  	geom_density() + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	ylab("Cell density") 
+
+plot1+plot2
+
+seurat <- HTODemux(seurat, assay = "HTO", positive.quantile = 0.99)
+
+table(seurat$hash.ID)
+table(seurat$HTO_classification.global)
+
+#tSNE-visualization
+seurat_subset <- subset(seurat, idents = "Negative", invert =TRUE)
+DefaultAssay(seurat_subset) <- "HTO"
+seurat_subset <- ScaleData(seurat_subset, assay = "HTO",  features = rownames(seurat_subset), verbose = FALSE )
+seurat_subset <- RunPCA(seurat_subset, assay = "HTO", rownames(seurat_subset), approx = FALSE)
+seurat_subset <- RunTSNE(seurat_subset, assay = "HTO", dims = 1:24,  perplexity = 100, check_duplicates=FALSE)
+DimPlot(seurat_subset)
+```
+
+
+```{r}
+print("Number of Singlets")
+print(nrow(seurat@meta.data |> filter( HTO_classification.global  == 'Singlet')))
+
+print("Number of Doublets")
+print(nrow(seurat@meta.data |> filter( HTO_classification.global  == 'Doublet')))
+
+# Filtering singlets only
+Idents(seurat) <- "HTO_classification.global"
+seurat <-subset(seurat, idents = "Singlet")
+```
+
+:::{.content-visible when-meta='verbose'}
+## Create Groups
+:::
+
+```{r}
+
+seurat@meta.data <- seurat@meta.data |>
+    mutate(Groups = 'CT') |>
+    mutate(Samples = str_c(Groups, hash.ID, sep = '_')) |> 
+    mutate(Samples=case_when(
+            hash.ID == 'Mouse-4' ~ 'CT_Mouse-3',
+            hash.ID == 'Mouse-5' ~ 'CT_Mouse-4',
+            TRUE ~ Samples
+    )) |>  
+    mutate(Samples = factor(Samples, levels = c(
+            'CT_Mouse-1',
+            'CT_Mouse-2',
+            'CT_Mouse-3',
+            'CT_Mouse-4')))
+
+```
+
+```{r}
+seurat_CT <- seurat
+```
+
+# Merged processing
+
+## Re-merging datasets
+
+```{r}
+data_list <- list(CT_MAIT = seurat_CT, Abau_MAIT = seurat_Abau, Ftula_MAIT = seurat_Ftula)
+# Merging the datasets
+seurat <- Merge_Seurat_List(data_list, 
+                       add.cell.ids = names(data_list),
+                       project = "MAIT_Abau_Ftula_CT_Lungs")
+
+seurat <- JoinLayers(seurat, assay = 'RNA')
+
+```
+
+:::{.content-visible when-meta='verbose'}
+
+## Edit Groups
+
+:::
+
+```{r}
+
+seurat@meta.data <- seurat@meta.data |>
+    mutate(Groups = factor(Groups, levels = c('CT', 'Abau', 'Ftula'))) |>
+    mutate(Samples = factor(Samples, levels = c(
+            'CT_Mouse-1',
+            'CT_Mouse-2',
+            'CT_Mouse-3',
+            'CT_Mouse-4',
+            'Abau_Mouse-1',
+            'Abau_Mouse-2',
+            'Abau_Mouse-3',
+            'Abau_Mouse-4',
+            'Ftula_Mouse-1',
+            'Ftula_Mouse-2',
+            'Ftula_Mouse-3',
+            'Ftula_Mouse-4',
+            'Ftula_Mouse-5')))
+
+seurat <- RenameCells(seurat, new.names=seurat$barcode)
+```
+
+:::{.content-visible when-meta='verbose'}
+
+## Import TCR data
+
+:::
+
+```{r}
+contigs <- read.csv(here('data/cluster_processing_2/aggr_all/outs/vdj_t/filtered_contig_annotations.csv'))
+
+#Demultiplexing VDJ libraries
+contig_list <- createHTOContigList(contigs, seurat, group.by = "Samples")
+contig_list <- contig_list[c(levels(seurat$Samples))]
+# Combining the Contigs
+combined <- combineTCR(contig_list, removeNA = TRUE, samples=c(levels(seurat$Samples)), filterMulti = TRUE)
+
+# # #Adding Samples as variables
+combined <- addVariable(combined, variable.name='Samples', variables=c(unique(seurat$Samples)))                                    
+
+## Integrating data with seurat object
+cell_names <- Cells(seurat)
+groups_merge <- pull(seurat@meta.data, Samples)
+
+#Changing barcodes on the seurat object for the merge with VDJ data
+new_cell_names <- paste(groups_merge, cell_names, sep='_')
+seurat$barcode <- cell_names
+seurat <- RenameCells(seurat, new.names=new_cell_names)
+
+# #Combining VDJ and Seurat Object
+seurat <- combineExpression(combined, seurat, proportion = TRUE, cloneCall='aa', group.by='Samples', chain = 'both')
+# Renaming cells back to original barcodes
+seurat <- RenameCells(seurat, new.names=seurat$barcode)
+```
+
+:::{.content-visible when-meta='verbose'}
+
+## Data Normalization
+
+:::
+
+```{r}
+# Normalize RNA data with SCTransform
+seurat <- SCTransform(seurat, verbose = F) 
+# seurat@assays$SCT
+# seurat <- PrepSCTFindMarkers(seurat)
+```
+
+:::{.content-visible when-meta='processing'}
+
+## Clustering
+
+:::
+
+```{r}
+#| fig-width: 4
+#| fig-height: 4
+#| fig-cap: 'Elbow plot showing the percentage of variability represented by by each PC to select number of dimensions '
+
+#Dimensionality reduction
+seurat <- RunPCA(seurat,npcs = 100)
+
+#Determining dimensionality of the dataset
+ElbowPlot(seurat, ndims = 100)
+```
+
+:::{.content-visible when-meta='processing'}
+
+Chosen Number of Dimensions:
+
+:::
+
+```{r}
+# Describe number of dimensions
+
+dimensions  <- 25 
+dimensions
+```
+
+```{r}
+#| fig-cap: UMAP plots showing the clustering results at different resolutions
+#| fig-width: 10
+#| fig-height: 10
+
+seurat <- RunUMAP(seurat, dims=1:dimensions, verbose = F, seed.use = 3514L)
+# resolutions <- c(0.25, 0.375, 0.5, 0.625, 0.75, 1, 1.25, 1.5, 1.75)
+resolutions <- c(0.05, 0.1, 0.15, 0.25, 0.375, 0.5)
+seurat <- FindNeighbors(seurat, dims = 1:dimensions, verbose = F)
+seurat <- FindClusters(seurat, resolution = resolutions, verbose = F)
+
+p <- list()
+i <- 1
+for (resolution in resolutions ) {
+    Idents(seurat) <- paste0('SCT_snn_res.', resolution) 
+    p2 <- DimPlot(seurat, reduction = "umap", label = TRUE) + ggtitle(paste0('R ', resolution)) + theme(legend.position = "none")    
+    p[[i]] <- p2
+    i <- i+1
+}
+
+plot <- grid.arrange(grobs = p)
+# ggsave('initial_clustering_results_by_resolution.pdf', path = here('result/figures'), plot = plot)
+```
+
+:::{.content-visible when-meta='processing'}
+
+Chosen resolution
+
+:::
+
+```{r}
+resolution <- 0.375
+resolution
+```
+
+```{r}
+object_annotations <- 'full_object_merged_pre_filtering'
+```
+
+### Clustering Results
+
+```{r}
+#| layout-ncol: 2
+Idents(seurat) <- paste0('SCT_snn_res.', resolution)
+seurat[['seurat_clusters']]<- Idents(seurat)
+DimPlot(seurat, reduction = "umap", label = TRUE) + ggtitle(paste0('R ', resolution)) + theme(legend.position = "none")
+ggsave(paste0('UMAP_clusters_R_', resolution, '_', object_annotations, '.pdf'), path = figures_path)
+DimPlot(seurat, reduction = "umap", label = TRUE, split.by = 'Groups', ncol = 2) + ggtitle(paste0('R ', resolution)) + theme(legend.position = "none")
+ggsave(paste0('UMAP_clusters_by_group_R_', resolution, '_', object_annotations, '.pdf'), path = figures_path, width = 5, height = 5)
+# DimPlot(seurat, reduction = "umap", label = TRUE, split.by = 'Samples', ncol = 4) + ggtitle(paste0('R ', resolution)) + theme(legend.position = "none")
+# ggsave(paste0('UMAP_clusters_by_sample_R_', resolution, '_', object_annotations, '.pdf'), path = figures_path)
+DimPlot(seurat, reduction = "umap", label = FALSE, group.by = 'Groups') + ggtitle(paste0('R ', resolution)) + theme(legend.position = "right")
+```
+
+### Top DEGs per cluster
+
+```{r}
+#| layout-ncol: 2
+# seurat <- PrepSCTFindMarkers(seurat)
+plot1 <- top_genes_per_cluster(seurat, n_genes_to_plot = 3, object_annotations = object_annotations, tables_path = tables_path, figures_path = figures_path, results_path = results_path, run_pathway_enrichment = F) 
+```
+
+```{r}
+#| fig-width: 8
+#| fig-height: 12
+print(plot1)
+ggsave(paste0(figures_path, 'DotPlot_Top3_per_cluster', object_annotations, '.pdf'), width = 8, height = 12)
+```
+
+:::{.content-visible when-meta='processing'}
+
+### Automatic cell type annotations
+
+:::
+
+```{r}
+local_path <- paste0(figures_path, object_annotations,'_cell_type_annotations')
+unlink(local_path,recursive = T)
+dir.create(local_path)
+
+# Normalize and scale data
+# seurat <- JoinLayers(seurat, assay = 'RNA')
+seurat <- NormalizeData(seurat, assay = "RNA", normalization.method = "LogNormalize", scale.fct = 10000)
+seurat <- ScaleData(seurat, assay = 'RNA')
+```
+
+:::{.content-visible when-meta='processing'}
+
+#### SingleR annotations
+
+:::
+
+:::{.content-visible when-meta='processing'}
+
+Annotations per Cluster
+
+:::
+
+```{r}
+#| fig-cap: UMAP plot showing the clustering results with SingleR fine annotations on a per cluster basis
+#| fig-width: 9
+#| fig-height: 6
+seurat <- annotate_seurat_with_SingleR_Eduard(seurat, local_path, database = 'ImmGen', annotation_basis = 'cluster_coarse', split_by_groups = FALSE)
+```
+
+:::{.content-visible when-meta='processing'}
+
+Annotations per Cell
+
+:::
+
+```{r}
+#| fig-cap: UMAP plot showing the clustering results with SingleR coarse annotations on a per cell basis
+
+annotate_seurat_with_SingleR_Eduard(seurat, local_path, database = 'ImmGen', annotation_basis = 'cell_coarse', split_by_groups = FALSE)
+```
+
+### Plotting Genes of Interest for cluster annotation
+
+```{r}
+#| fig-cap: Feature plots showing the expression of T cell markers
+#| fig-width: 8
+#| fig-height: 10
+FeaturePlot_scCustom(seurat, features = c('Cd3e', 'Cd4', 'Cd8a', 'Cd8b1', 'Trdc', 'Trac'), pt.size = 0.01, colors_use = sequential_palette) +
+    theme(legend.position = 'none')
+```
+
+```{r}
+#| fig-cap: Feature plots showing the expression of myeloid cell markers
+#| fig-width: 8
+#| fig-height: 10
+FeaturePlot_scCustom(seurat, features = c('Sirpa', 'Xcr1', 'Itgae', 'Itgax', 'Csf1r', 'Csf2ra'), pt.size = 0.1, colors_use = sequential_palette) +
+    theme(legend.position = 'none')
+```
+
+```{r}
+#| fig-cap: Feature plots showing the expression of neuron Markers
+#| #| fig-width: 8
+#| fig-height: 13
+FeaturePlot_scCustom(seurat, features = c('Tubb3', 'Snap25', 'Gad1', 'Slc17a7'), pt.size = 0.1, colors_use = sequential_palette, num_columns = 2) 
+```
+
+## Removing contaminating clusters and preprocessing
+
+### Removing macrophage cluster
+
+```{r}
+Idents(seurat) <- 'seurat_clusters'
+seurat <- subset(seurat, idents = c('10'), invert = TRUE)
+DimPlot(seurat, reduction = "umap", label = TRUE) + ggtitle(paste0('R ', resolution)) + theme(legend.position = "none")
+```
+
+:::{.content-visible when-meta='verbose'}
+
+## Data Normalization
+
+:::
+
+```{r}
+# Normalize RNA data with SCTransform
+seurat <- SCTransform(seurat, verbose = F) 
+# seurat@assays$SCT
+# seurat <- PrepSCTFindMarkers(seurat)
+```
+
+:::{.content-visible when-meta='processing'}
+
+## Clustering
+Removing VDJ genes from clustering
+
+:::
+
+```{r}
+#| fig-width: 4
+#| #| fig-height: 4
+#| fig-cap: 'Elbow plot showing the percentage of variability represented by by each PC to select number of dimensions '
+
+seurat <- quietVDJgenes(seurat)
+
+#Dimensionality reduction
+seurat <- RunPCA(seurat,npcs = 100)
+
+#Determining dimensionality of the dataset
+ElbowPlot(seurat, ndims = 100)
+```
+
+:::{.content-visible when-meta='processing'}
+
+Chosen Number of Dimensions:
+
+:::
+
+```{r}
+# Describe number of dimensions
+
+dimensions  <- 25 
+dimensions
+```
+
+```{r}
+#| fig-cap: UMAP plots showing the clustering results at different resolutions
+#| fig-width: 10
+#| fig-height: 10
+
+seurat <- RunUMAP(seurat, dims=1:dimensions, verbose = F, seed.use = 3514L)
+# resolutions <- c(0.25, 0.375, 0.5, 0.625, 0.75, 1, 1.25, 1.5, 1.75)
+resolutions <- c(0.05, 0.1, 0.15, 0.175, 0.2, 0.225, 0.25, 0.375, 0.5)
+seurat <- FindNeighbors(seurat, dims = 1:dimensions, verbose = F)
+seurat <- FindClusters(seurat, resolution = resolutions, verbose = F)
+
+p <- list()
+i <- 1
+for (resolution in resolutions ) {
+    Idents(seurat) <- paste0('SCT_snn_res.', resolution) 
+    p2 <- DimPlot(seurat, reduction = "umap", label = TRUE) + ggtitle(paste0('R ', resolution)) + theme(legend.position = "none")    
+    p[[i]] <- p2
+    i <- i+1
+}
+
+plot <- grid.arrange(grobs = p)
+# ggsave('initial_clustering_results_by_resolution.pdf', path = here('result/figures'), plot = plot)
+```
+
+:::{.content-visible when-meta='processing'}
+
+Chosen resolution
+
+:::
+
+```{r}
+resolution <- 0.15
+resolution
+```
+
+```{r}
+object_annotations <- 'full_object_filtered'
+resolution <- 0.15
+```
+
+## Clustering Results
+
+```{r}
+#| layout-ncol: 2
+Idents(seurat) <- paste0('SCT_snn_res.', resolution)
+seurat[['seurat_clusters']]<- Idents(seurat)
+DimPlot(seurat, reduction = "umap", label = TRUE) + ggtitle(paste0('R ', resolution)) + theme(legend.position = "none")
+ggsave(paste0('UMAP_clusters_R_', resolution, '_', object_annotations, '.pdf'), path = figures_path)
+DimPlot(seurat, reduction = "umap", label = TRUE, split.by = 'Groups', ncol = 2) + ggtitle(paste0('R ', resolution)) + theme(legend.position = "none")
+ggsave(paste0('UMAP_clusters_by_group_R_', resolution, '_', object_annotations, '.pdf'), path = figures_path, width = 5, height = 5)
+DimPlot(seurat, reduction = "umap", label = TRUE, split.by = 'Samples', ncol = 4) + ggtitle(paste0('R ', resolution)) + theme(legend.position = "none")
+ggsave(paste0('UMAP_clusters_by_sample_R_', resolution, '_', object_annotations, '.pdf'), path = figures_path)
+DimPlot(seurat, reduction = "umap", label = FALSE, group.by = 'Groups') + ggtitle(paste0('R ', resolution)) + theme(legend.position = "right")
+```
+
+### Cluster frequency per condition
+
+```{r}
+extract_cell_counts(seurat, seurat_clusters, figures_path, tables_path, object_annotations=object_annotations)
+```
+
+## Top DEGs per cluster
+
+```{r}
+#| layout-ncol: 2
+# seurat <- PrepSCTFindMarkers(seurat)
+plot1 <- top_genes_per_cluster(seurat, n_genes_to_plot=5, object_annotations, tables_path = tables_path, figures_path = figures_path, results_path = results_path, run_pathway_enrichment = F) 
+```
+
+```{r}
+#| fig-width: 8
+#| fig-height: 12
+print(plot1)
+ggsave(paste0(figures_path, 'DotPlot_Top3_per_cluster', object_annotations, '.pdf'), width = 8, height = 12)
+```
+
+## Exploring cluster 3
+
+```{r}
+#| layout-ncol: 2
+seurat[["percent.ribo"]] <- PercentageFeatureSet(seurat, assay="RNA",pattern = "^Rp[sl]")
+FeaturePlot_scCustom(seurat, features = c('nCount_RNA', 'nFeature_RNA', 'percent.mt', 'percent.ribo'), colors_use = sequential_palette)
+FeaturePlot_scCustom(seurat, features = c('Zbtb16', '', 'Icos'), colors_use = sequential_palette)
+VlnPlot(seurat, features = c('nCount_RNA', 'nFeature_RNA', 'percent.mt', 'percent.ribo'), group.by = 'seurat_clusters', pt.size = 0.1) + NoLegend()
+VlnPlot(seurat, features = c('Zbtb16', 'Ubc', 'Icos'), group.by = 'seurat_clusters', pt.size = 0.1) + NoLegend()
+FeatureScatter(seurat, feature1 = 'nCount_RNA', feature2 = 'nFeature_RNA', split.by = 'seurat_clusters', ncol = 3)
+```
+
+Cluster 3 looks like a potential technical artifact. At first glance, the slightly higher mitochondrial gene count and lower RNA counts suggested lower quality cells we could filter out. These also have a much lower ribosomal protein gene content, suggestive of damaged cells. Furthermore, the differential genes separating them from other clusters are not  informative and some are not expected to be present in this cell type (potential ambient RNA from the tissue). However the expression of other expected genes such as PLZF argues against that. One possibility is that these are damaged cells that have lost cytoplasmic integrity, leading to a loss of ribosomal protein genes and overall lower gene counts, while preserving nuclear transcripts. I will test this hypothesis by running DropletQC to quantify the fraction of nuclear (intronic) RNA, which we expect to be higher for damaged cells (Muskovic et al. Genome Biology 2021).
+
+```{r}
+# saveRDS(seurat, file = here('data/_MAIT_Abau_Ftula_CT_Lungs_.rds'))
+```
+
+## Implementing DropletQC
+
+```{r}
+# renv::install('powellgenomicslab/DropletQC')
+# devtools::install_github('powellgenomicslab/DropletQC')
+# renv::snapshot()
+library(DropletQC)
+# seurat <- readRDS(here('data/MAIT_Abau_Ftula_CT_Lungs.rds'))
+```
+
+```{r}
+# Ftula
+# barcodes <- seurat |> subset(subset = Groups == 'Ftula') |> Cells() |> str_replace('-2', '-1')
+nuclear_fraction_Ftula <- nuclear_fraction_tags(
+   bam = here('data/cluster_processing_2/Ftula_MAIT/outs/per_sample_outs/Ftula_MAIT/count/sample_alignments.bam'),
+   barcodes = here('data/cluster_processing_2/Ftula_MAIT/outs/per_sample_outs/Ftula_MAIT/count/sample_filtered_feature_bc_matrix/barcodes.tsv.gz'),
+   tiles = 100,
+   cores = 8,
+   verbose = FALSE
+)
+# nuclear_fraction_Ftula |> head()
+nuclear_fraction_Ftula <- nuclear_fraction_Ftula |> rownames_to_column('barcode') |> mutate(barcode = str_replace(barcode, '-1', '-2'))
+
+# Control
+# barcodes <- seurat |> subset(subset = Groups == 'CT') |> Cells()
+nuclear_fraction_Control <- nuclear_fraction_tags(
+   bam = here('data/cluster_processing_2/CT_MAIT/outs/per_sample_outs/CT_MAIT/count/sample_alignments.bam'),
+   barcodes = here('data/cluster_processing_2/CT_MAIT/outs/per_sample_outs/CT_MAIT/count/sample_filtered_feature_bc_matrix/barcodes.tsv.gz'),
+   tiles = 100,
+   cores = 8,
+   verbose = FALSE
+)
+# nuclear_fraction_Control |> head()
+nuclear_fraction_Control <- nuclear_fraction_Control |> rownames_to_column('barcode')
+
+# Abau
+# barcodes <- seurat |> subset(subset = Groups == 'Abau') |> Cells() |> str_replace('-3', '-1')
+nuclear_fraction_Abau <- nuclear_fraction_tags(
+   bam = here('data/cluster_processing_2/Abau_MAIT/outs/per_sample_outs/Abau_MAIT/count/sample_alignments.bam'),
+   barcodes = here('data/cluster_processing_2/Abau_MAIT/outs/per_sample_outs/Abau_MAIT/count/sample_filtered_feature_bc_matrix/barcodes.tsv.gz'),
+   tiles = 100,
+   cores = 8,
+   verbose = FALSE
+)
+
+# Merging results
+nuclear_fraction <- bind_rows(nuclear_fraction_Ftula, nuclear_fraction_Control, nuclear_fraction_Abau)
+
+seurat@meta.data <- seurat@meta.data |>
+    select(-starts_with('barcode')) |> 
+    rownames_to_column('barcode') |>
+    left_join(nuclear_fraction, by = 'barcode') |>
+    column_to_rownames('barcode')
+
+FeaturePlot_scCustom(seurat, features = c('nuclear_fraction'), colors_use = sequential_palette)
+
+```
+
+```{r}
+#| layout-ncol: 2
+VlnPlot_scCustom(seurat, features = c('nuclear_fraction')) & NoLegend()
+
+ggplot(data = seurat@meta.data,
+          aes(x = nuclear_fraction, group = seurat_clusters, fill = seurat_clusters)) +
+   geom_density(adjust = 1.5, alpha = .4) + ggtitle("Nuclear fraction score")
+
+seurat@meta.data <- seurat@meta.data |> mutate(nCount_RNA_log = log10(nCount_RNA))
+FeatureScatter(seurat, feature1 = 'nuclear_fraction', feature2 = 'nCount_RNA_log', split.by = 'seurat_clusters', ncol = 2)
+FeatureScatter(seurat, feature1 = 'nuclear_fraction', feature2 = 'percent.ribo', split.by = 'seurat_clusters', ncol = 2) + geom_hline(yintercept = 7, linetype = 'dashed', color = 'gray')
+
+```
+
+Very clearly Cluster number 4 is comprised of low quality, damaged cells with very low present ribosomal protein genes and high nuclear fraction. I will establish a threshold of 7% percent ribosomal protein genes to remove low-quality cells from all clusters and remove most cells from this cluster.
+
+## Filtering out damaged cells
+
+```{r}
+#| layout-ncol: 2
+#Quantifying percentage mitochondria
+Idents(seurat) <- 'Tissue'
+seurat[["percent.mt"]] <- PercentageFeatureSet(seurat, assay="RNA",pattern = "mt-")
+
+VlnPlot(seurat, features = c("nCount_RNA", "nFeature_RNA", "percent.mt"), ncol=3, pt.size = 0.01)
+
+# Setting thresholds:
+nCount_RNA_threshold <- 1500
+nFeature_RNA_threshold <- 500
+percent_mt_threshold <- 6
+ribosomal_threshold <- 7
+
+
+p1 <- seurat@meta.data %>% 
+  	ggplot(aes(x=nCount_RNA)) + 
+  	geom_density() + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	ylab("Cell density") +
+  	geom_vline(xintercept = nCount_RNA_threshold)
+
+p2 <- seurat@meta.data %>% 
+  	ggplot(aes(x=nFeature_RNA)) + 
+  	geom_density() + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	ylab("Cell density") +
+  	geom_vline(xintercept = nFeature_RNA_threshold)
+
+p3 <- seurat@meta.data %>% 
+  	ggplot(aes(x=percent.mt)) + 
+  	geom_density() + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	ylab("Cell density") +
+  	geom_vline(xintercept = percent_mt_threshold)
+
+p4 <- seurat@meta.data %>% 
+  	ggplot(aes(x = percent.ribo)) + 
+  	geom_density() + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	ylab("Cell density") +
+  	geom_vline(xintercept = ribosomal_threshold)
+
+grid.arrange(p1, p2, p3, p4)    
+
+# # Visualize feature relationships
+# # plot1 <- FeatureScatter(seurat, feature1 = "nCount_RNA", feature2 = "percent.mt")
+
+# # plot2 <- FeatureScatter(seurat, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+# # plot1+plot2
+
+cell_number <- list(nrow(seurat[[]]))
+```
+
+```{r}
+# Filter data
+
+cell_number <- list(nrow(seurat[[]]))
+seurat <- subset(seurat, subset = nFeature_RNA  > nFeature_RNA_threshold & percent.mt < percent_mt_threshold & nCount_RNA > nCount_RNA_threshold & percent.ribo > ribosomal_threshold)
+cell_number <- append(cell_number, nrow(seurat[[]]))
+
+print("Cell number before and after filterings")
+print(cell_number)
+```
+
+## Re Clustering
+
+```{r}
+#| fig-width: 4
+#| #| fig-height: 4
+#| fig-cap: 'Elbow plot showing the percentage of variability represented by by each PC to select number of dimensions '
+
+seurat <- SCTransform(seurat)
+seurat <- quietVDJgenes(seurat)
+
+#Dimensionality reduction
+seurat <- RunPCA(seurat,npcs = 100)
+
+#Determining dimensionality of the dataset
+ElbowPlot(seurat, ndims = 100)
+```
+
+:::{.content-visible when-meta='processing'}
+
+Chosen Number of Dimensions:
+
+:::
+
+```{r}
+# Describe number of dimensions
+
+dimensions  <- 25  
+dimensions
+```
+
+```{r}
+#| fig-cap: UMAP plots showing the clustering results at different resolutions
+#| fig-width: 10
+#| fig-height: 10
+
+seurat <- RunUMAP(seurat, dims=1:dimensions, verbose = F, seed.use = 3514L, n.neighbors = 30, min.dist = 0.3)
+# resolutions <- c(0.25, 0.375, 0.5, 0.625, 0.75, 1, 1.25, 1.5, 1.75)
+resolutions <- c(0.05, 0.1, 0.2, 0.25, 0.375, 0.5, 0.625, 0.75, 1)
+# resolutions <- c(0.375)
+seurat <- FindNeighbors(seurat, dims = 1:dimensions, verbose = F)
+seurat <- FindClusters(seurat, resolution = resolutions, verbose = F, algorithm = 4, random.seed = 3514L)
+
+p <- list()
+i <- 1
+for (resolution in resolutions ) {
+    Idents(seurat) <- paste0('SCT_snn_res.', resolution) 
+    p2 <- DimPlot(seurat, reduction = "umap", label = TRUE) + ggtitle(paste0('R ', resolution)) + theme(legend.position = "none")    
+    p[[i]] <- p2
+    i <- i+1
+}
+
+plot <- grid.arrange(grobs = p)
+# ggsave('initial_clustering_results_by_resolution.pdf', path = here('result/figures'), plot = plot)
+```
+
+```{r}
+#renv::install('clustree')
+library(clustree)
+conflicts_prefer(base::setdiff)
+clustree(seurat, prefix = "SCT_snn_res.")
+```
+
+:::{.content-visible when-meta='processing'}
+
+Chosen resolution
+
+:::
+
+```{r}
+resolution <- 0.625
+resolution
+```
+
+:::{.content-visible when-meta='verbose'}
+
+### Save Object
+
+:::
+
+```{r}
+saveRDS(seurat, file = here('data/MAIT_Abau_Ftula_CT_Lungs_post_QC.rds'))
+```
+

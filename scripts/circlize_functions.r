@@ -48,6 +48,7 @@ plot_circos_clonotypes <- function(
     groups,
     color_palette = NULL,
     alpha_col = 0.8,
+    color_across_groups = NULL,
     base_colors = c(
         "skyblue", "darkorange", "wheat", "darkolivegreen", "orchid", 
         "seagreen", "gold", "lavenderblush", "tomato")
@@ -63,11 +64,11 @@ plot_circos_clonotypes <- function(
     if (file_type == "pdf") {
         pdf(file = file_name)
     } else if (file_type == "png") {
-        png(file = file_name, width = 800, height = 800)
+        png(file = file_name, width = 15, height = 15, units = 'cm', res = 300)
     } else {
         stop("file_type must be either 'pdf' or 'png'")
     }
-
+    circos.clear()
     circos.par(gap.degree = 2, track.height = 0.1, cell.padding = c(0, 0, 0, 0), circle.margin = circle_margin)
     circos.initialize(xlim = clonotype_data_plot_distinct)
 
@@ -134,7 +135,20 @@ plot_circos_clonotypes <- function(
                                 color = alpha("gray", 0.25)                                                               
                             }                        
                         }
-                    } else {
+                    } else if (!is.null(color_across_groups)) {
+                        across_groups = F
+                        for (combination in color_across_groups) {
+                            if ((str_detect(origin, combination[1]) & str_detect(target, combination[2])) | (str_detect(origin, combination[2]) & str_detect(target, combination[1])) ) {
+                                across_groups = T
+                            }
+                        }
+                        if (across_groups) {
+                            color = alpha("purple", alpha_col)                                                               
+                        } else {
+                            color = alpha(grid_cols[origin], alpha_col)                                                               
+                        }
+                        
+                    }else {
                         color = alpha(grid_cols[origin], alpha_col)                                                               
                     }
                     circos.link(
@@ -152,6 +166,7 @@ plot_circos_clonotypes <- function(
     title(paste0('Clonotype Overlap ', cluster, ' per ', grouping_variable))
     dev.off()
     circos.clear()
+    return()
 }
 
 overlap_circos_and_tables <- function(
@@ -162,6 +177,7 @@ overlap_circos_and_tables <- function(
     cell_types_column = 'cell_types',
     write_table = TRUE,
     figures_path,
+    tables_path,
     circle_margin = 0.2,
     major_ticks = 500,
     cex = 0.6,
@@ -169,6 +185,7 @@ overlap_circos_and_tables <- function(
     groups,
     color_palette = NULL,
     alpha_col = 0.8,
+    color_across_groups = NULL,
     base_colors = c(
         "skyblue", "darkorange", "wheat", "darkolivegreen", "orchid", 
         "seagreen", "gold", "lavenderblush", "tomato")
@@ -198,7 +215,7 @@ overlap_circos_and_tables <- function(
         mutate(clonotype = paste0('clonotype ', as.character(row_number())))
     
     if (write_table) {
-        write_csv(clonotype_data, file = paste0(results_path, 'TCR_data_per_group.csv'))
+        write_csv(clonotype_data, file = here(tables_path, 'TCR_data_per_group.csv'))
     }
     
     group_levels <- levels(pull(seurat@meta.data, grouping_variable))
@@ -249,7 +266,8 @@ overlap_circos_and_tables <- function(
         groups = groups,
         alpha_col = alpha_col,
         base_colors = base_colors,
-        color_palette = color_palette
+        color_palette = color_palette,
+        color_across_groups = color_across_groups
     )
 
     plot_circos_clonotypes(
@@ -265,8 +283,10 @@ overlap_circos_and_tables <- function(
         samples = samples,
         groups = groups,
         base_colors = base_colors,
-        color_palette = color_palette
+        color_palette = color_palette,
+        alpha_col = alpha_col,
+        color_across_groups = color_across_groups
     )
 
-    return(clonotype_data)
+    return()
 }

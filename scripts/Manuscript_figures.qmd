@@ -1,0 +1,879 @@
+---
+title: Analysis of Abau and Ftul infected mice - lungs
+author: Eduard Ansaldo
+date: '`r Sys.Date()`'
+verbose: false
+engine: knitr
+knitr:
+  opts_chunk: 
+    echo: false
+    warning: false
+    message: false
+    error: false
+    cache: true
+    results: markdown
+    code-fold: true
+    cache-lazy: false
+    
+processing: true
+
+execute: 
+  cache: true
+
+
+format:
+  html:
+    embed-resources: true
+    fig-cap-location: top
+    toc: true
+    toc-depth: 3
+
+    toc-expand: 1
+    toc-location: left
+    toc-title: Table of Contents
+    toc-collapse: true
+    number-sections: true
+    page-layout: full
+    fig-width: 6
+    fig-height: 6
+    fig-align: 'center'
+---
+
+::: {.content-visible when-meta="verbose"}
+
+# Initialization
+
+:::
+
+```{r}
+#| cache: false
+# General R and plotting 
+library(conflicted)
+library(tidyverse)
+library(ggplot2)
+library(scales)
+library(patchwork)
+library(cowplot)
+library(gridExtra)
+library(ggrepel)
+library(stringr)
+library(VennDiagram)
+library(pheatmap)
+library(viridis)
+library(here)
+library(readxl)
+library(readxl)
+library(ggbeeswarm)
+library(tidyplots)
+
+# Single Cell Analysis Packages
+library(Seurat)
+library(scRepertoire)
+library(circlize)
+library(scCustomize)
+library(SingleR)
+library(celldex)
+library(UCell)
+library(presto)
+library(scDblFinder)
+library(immunarch)
+
+# DEG, pathway enrichment and visualization packages
+library(DESeq2)
+# library(gprofiler2)
+library(clusterProfiler)
+library(DOSE)
+library(pathview)
+library(org.Mm.eg.db)
+library(scRepertoire)
+library(enrichplot)
+library(msigdbr)
+library(rlang)
+
+# Python Version 3.9.6!!! 
+
+# peconflicts_scout()
+conflicts_prefer(dplyr::filter)
+conflicts_prefer(dplyr::count)
+conflicts_prefer(dplyr::select)
+conflicts_prefer(base::setdiff)
+conflicts_prefer(dplyr::rename)
+conflicts_prefer(base::unname)
+conflicts_prefer(tidyr::expand)
+conflicts_prefer(tidyplots::save_plot)
+
+# Loading custom functions
+source(here('scripts/function_template.r'))
+source(here('scripts/metascape_functions.r'))
+source(here('scripts/circlize_functions.r'))
+
+```
+
+```{r}
+#| results: hide 
+#| cache: false 
+# Setting working directory and seed
+# renv::update()
+# renv::snapshot()
+# renv::init()
+# renv::status()
+set.seed(3514)
+# i_am('scripts/Analysis.qmd')
+here()
+results_path <- here('results/')
+dir.create(results_path)
+results_path <- here('results/')
+dir.create(results_path)
+figures_path <- here('results/figures/')
+dir.create(figures_path)
+# data_path <- here('data/')
+# dir.create(data_path)
+tables_path <- here('results/tables/')
+dir.create(tables_path)
+
+# Loading custom functions
+source(here('scripts/function_template.r'))
+source(here('scripts/metascape_functions.r'))
+source(here('scripts/circlize_functions.r'))
+
+# Setting up color palettes
+diverging_palette <- hcl.colors(n = 20,'Purple-Green',rev = T)
+sequential_palette_dotplot <- hcl.colors(n = 20,'YlGn',rev = T)
+sequential_palette <- hcl.colors(n = 20,'Mako',rev = T)
+
+knitr::dep_prev()
+```
+
+
+# Initialization
+
+```{r}
+seurat_original <- readRDS(here('data/MAIT_Abau_Ftula_CT_Lungs.rds'))
+seurat_cell_cycle <- readRDS(here('data/MAIT_Abau_Ftula_CT_Lungs_cell_cycle.rds'))
+seurat_Abau <- readRDS(here('data/MAIT_Abau_Ftula_CT_Lungs_Abau_only.rds'))
+seurat_Ftula <- readRDS(here('data/MAIT_Abau_Ftula_CT_Lungs_Ftula_only.rds'))
+results_path <- here('results/Manuscript_figures/')
+unlink(results_path, recursive = T)
+figures_path <- here('results/Manuscript_figures/figures/')
+dir.create(figures_path, recursive = T, showWarnings = F)
+tables_path <- here('results/Manuscript_figures/tables/')
+dir.create(tables_path, recursive = T, showWarnings = F)
+object_annotations <- 'manuscript_figures'
+```
+
+```{r}
+group_colors <- c(
+    'Abau' = '#0072b2', 
+    'Ftula' = '#d55e10', 
+    'CT' = '#009e73'
+)
+
+# Setting up color palettes
+diverging_palette <- hcl.colors(n = 20,'Purple-Green',rev = T)
+sequential_palette_dotplot <- hcl.colors(n = 20,'YlGn',rev = T)
+sequential_palette <- hcl.colors(n = 20,'Mako',rev = T)
+diverging_palette_2 <- hcl.colors(n = 20,'RdBu',rev = T)
+diverging_palette_3 <- hcl.colors(n = 20,'Geyser',rev = F)
+
+full_object_original <- list()
+full_object_regressed <- list()
+Abau_object <- list()
+Ftula_object <- list()
+Milo_figures <- list()
+```
+
+# Generate original object plots
+
+```{r}
+seurat <- seurat_original
+```
+
+## DimPlots and cluster frequency
+
+```{r}
+Idents(seurat) <- 'seurat_clusters'
+
+total_cell_number <- Cells(seurat) |> length()
+Abau_cell_number <- Cells(seurat_Abau) |> length()
+Ftula_cell_number <- Cells(seurat_Ftula) |> length()
+
+# Clusters UMAP plot
+full_object_original$DimPlot <- DimPlot(seurat, group.by = 'seurat_clusters', pt.size = 0.5, label = F) +
+     labs(title = 'MAIT cell Leiden clusters', 
+        #   subtitle = 'Lung single-cell RNA-seq', 
+        #   caption = 'n = 4 Abau, n = 5 Ftula, n = 4 CT',
+     x = 'UMAP 1', y = 'UMAP 2')  
+full_object_original$DimPlot <- full_object_original$DimPlot  |> LabelClusters(id = 'seurat_clusters', size = 4, color = 'black', repel = F, fontface = 'bold') 
+
+# Clusters split by group plot
+full_object_original$DimPlot_groups <- DimPlot(seurat, group.by = 'seurat_clusters', pt.size = 0.5, label = F, split.by = 'Groups') +
+     labs( x = 'UMAP 1', y = 'UMAP 2', title = NULL)  
+
+# Cluster frequency plot
+seurat_local <- subset(seurat, subset = Groups != 'CT')
+cell_counts <- FetchData(seurat_local, vars = c("seurat_clusters", "Samples", "Groups"))
+cell_counts <- arrange(cell_counts, Samples)
+counts <- cell_counts %>% 
+    add_count(Groups, name='total_cell_count_by_group')  |>
+    mutate(weights = total_cell_count_by_group/Abau_cell_number)  |>
+    add_count(seurat_clusters, name='total_cell_count_by_cluster', wt =  weights)  |>
+    count(seurat_clusters, Samples, Groups, total_cell_count_by_cluster , name='sample_cluster_count', wt = weights)  |> 
+    mutate(frequency_within_cluster=sample_cluster_count*100/total_cell_count_by_cluster)  |> 
+    mutate(Samples = as.character(Samples)) |> 
+    arrange(Samples, desc(Samples)) 
+frequency_table <- counts |> 
+    arrange(Samples) |>     
+    pivot_wider(id_cols = seurat_clusters,  names_from =  Samples , values_from = frequency_within_cluster, values_fill = 0)
+# write.csv(frequency_table,file=here(tables_path, paste0( "frequency per roll }} per condition " , ".csv")), row.names=F) 
+
+full_object_original$cluster_frequency <- counts |>
+    ggplot(aes(x=seurat_clusters, fill=Groups, y = frequency_within_cluster)) +
+    geom_col(aes(), position = 'fill') +
+    # geom_bar(position=position_fill()) +
+    theme_classic() +
+    labs(x = 'Cluster', y = 'Frequency (%)', title = 'MAIT normalized cell cluster frequency by sample')+
+    scale_y_continuous(expand = expansion(mult = c(0, 0)), breaks = c(0, 0.25, 0.5, 0.75, 1), labels = c(0, 25, 50, 75, 100))+
+    scale_fill_discrete(palette = group_colors) 
+
+```
+
+## Feature plots
+
+```{r}
+
+#  cluster Markers dot plot
+seurat <- PrepSCTFindMarkers(seurat)
+full_object_original$cluster_dotplot <- top_genes_per_cluster(seurat, n_genes_to_plot = 3, object_annotations = '', tables_path = tables_path, figures_path = figures_path, results_path = results_path, run_pathway_enrichment = F) 
+ggsave(plot = full_object_original$cluster_dotplot, filename = here(figures_path,  paste0('DotPlot_Top3_per_cluster', '.pdf')), width = 8, height = 12)
+
+
+type_17_markers <- c('Rorc', 'Il17a', 'Sdc1', 'Il7r', 'Il1r1', 'Ccr6', 'Sdc4')
+type_1_markers <- c('Tbx21', 'Ifng', 'I12rb2', 'Cxcr3', 'Gzmb', 'Gzmk', 'Klrg1', 'Klrd1', 'Ly6c2')
+naive_markers <- c('S1pr1', 'Ccr7', 'Sell', 'Tcf7', 'Lef1')
+regulatory_markers <- c('Arg2', 'Il10', 'Il21')
+exhaustion_markers <- c('Ctla4', 'Pdcd1', 'Lag3', 'Tigit', 'Havcr2')
+tissue_repair_markers <- c('Areg', 'Ramp3','Il18r1', 'Tgfb1', 'Tnf', 'Mmp25', 'Cxcl10', 'Rankl', 'Ifrd1')
+transcription_factors <- c('Tbx21', 'Rorc', 'Gata3', 'Foxp3', 'Ahr', 'Maf', 'Prdm1', 'Bcl6', 'Zbtb16')
+tissue_residency <- c('Itgae', 'Klrg1', 'Itga1', 'Itga2', 'Ccr9', 'Ccr10', 'Itga4', 'Itgb7')
+activation_markers <- c('Cd69', 'Cd44', 'Nr4a1')
+cytokines <- c('Ifng', 'Il17a', 'Il17f', 'Il4', 'Il10', 'Tgfb1', 'Tnf', 'Il2', 'Gzma', 'Gzmb', 'Nkg7', 'Ccl5', 'Il27ra', 'Ifgnr1')
+costimulatory_receptors <- c('Ctla4', 'Lag3', 'Tigit', 'Havcr2', 'Cd28', 'Cd40lg', 'Pdcd1', 'Tnfsf4', 'Cd27', 'Tnfrsf9')
+
+final_list <- c(type_17_markers, type_1_markers, naive_markers, regulatory_markers, exhaustion_markers, tissue_repair_markers, transcription_factors, tissue_residency, activation_markers, cytokines, costimulatory_receptors) |> unique() |> rev()
+
+# final_gene_list <- 
+
+# Idents(seurat) <- 'seurat_clusters'
+# DotPlot_scCustom(seurat, features = final_list, colors_use=sequential_palette_dotplot, flip_axes = T, scale = T, col.min = 0, col.max = 2, dot.scale = 8, dot.min = 0, scale.min = 0, scale.max = 60, x_lab_rotate = T, y_lab_rotate = F)  + theme(axis.text.x = element_text(size = 14), axis.text.y = element_text(size = 14), legend.title = element_text(size = 18))
+# ggsave(filename = here(figures_path, 'Dotplot_markers.pdf'), width = 25,height = 5)
+# Idents(seurat) <- 'Groups'
+# DotPlot_scCustom(seurat, features = final_list, colors_use=sequential_palette_dotplot, flip_axes = F, scale = F, col.min = 0, col.max = 2, dot.scale = 8, dot.min = 0, scale.min = 0, scale.max = 60, x_lab_rotate = T, y_lab_rotate = F)  + theme(axis.text.x = element_text(size = 14), axis.text.y = element_text(size = 14), legend.title = element_text(size = 18))
+
+feature_plot <- function (gene) {
+    plot1 <- FeaturePlot_scCustom(seurat, features = gene,  colors_use = sequential_palette, pt.size = 1) + labs(title = gene, x = 'UMAP 1', y = 'UMAP 2')
+    ggsave(plot = plot1, filename = paste0('FeaturePlot', gene, '_', object_annotations, '.pdf'), path = figures_path, width = 5, height = 5)
+    return(plot1)
+}
+genes_to_plot <- c('Rorc', 'Il17a', 'Sdc1', 'Il7r', 'Il1r1', 'Ccr6', 'Tbx21', 'Ifng', 'Il12rb2', 'Cxcr3', 'Gzmb', 'Gzmk', 'Gzma', 'Gzmm', 'Klrg1', 'Klrd1', 'Ly6c2', 'Ramp3', 'Slamf7', 'Areg')
+full_object_original$feature_plots <- genes_to_plot |> 
+    set_names() |>
+    map(feature_plot )
+
+```
+
+## Signature scores
+
+```{r}
+
+DefaultAssay(seurat) <- 'SCT'
+signatures <- read_excel(here('data/Hagoulet_signatures.xlsx'), skip = 1)
+signatures <- signatures |>
+    dplyr::filter(!(row_number() == 1)) |>
+    dplyr::select(-all_of(c('Signature', 'Tissue repair 1', 'Tissue repair 2', 'Tissue repair 3', 'Tissue repair 4')))
+    
+signatures <- map(.x = signatures, .f = ~ purrr::discard(.x, is.na)) |> as.list()
+
+
+tissue_repair_linehan <- c('Angpt1', 'Angpt2', 'Angpt4', 'Areg', 'Bmp2', 'Bmp4', 'Bmp7', 'Btc', 'Ccl2', 'Ccl3', 'Chat', 'Csf1', 'Csf2', 'Ctgf', 'Cxcl1', 'Cxcl10', 'Cxcl12', 'Cxcl15', 'Cxcl2', 'Cyr61', 'Defb1', 'Defb6', 'Dhh', 'Disp1', 'Dll1', 'Dll3', 'Dll4', 'Egf', 'Epgn', 'Ereg', 'Fgf1', 'Fgf10', 'Fgf22', 'Fgf7', 'Flg', 'Flg2', 'Furin', 'Hbegf', 'Hgf', 'Hif1a', 'Hmgb1', 'Igf1', 'Igf2', 'Ihh', 'Il1a', 'Il1b', 'Il6', 'Inhba', 'Inhbb', 'Jag1', 'Jag2', 'Lep', 'Mmp10', 'Mmp13', 'Mmp15', 'Mmp2', 'Mmp25', 'Mmp28', 'Mmp3', 'Ngf', 'Nrg1', 'Nrg2', 'Nrg3', 'Nrg4', 'Pdgfa', 'Pdgfb', 'Pdgfc', 'Pgf', 'Ptges2', 'Shh', 'Tgfa', 'Tgfb1', 'Tgfb2', 'Tgfb3', 'Thbs1', 'Tnf', 'Vegfa', 'Vegfb', 'Vegfc', 'Vegfd', 'Wnt1', 'Wnt10a', 'Wnt10b', 'Wnt11', 'Wnt16', 'Wnt2', 'Wnt2b', 'Wnt3', 'Wnt3a', 'Wnt4', 'Wnt5a', 'Wnt5b', 'Wnt6', 'Wnt7a', 'Wnt7b', 'Wnt8a', 'Wnt8b', 'Wnt9a', 'Wnt9b')
+
+signatures$tissue_repair <- tissue_repair_linehan
+
+# Removing genes that are not detected
+blacklist_elements <- c('H2afz','Smsc2','Hist1h2ap','Flg','Flg2','Bmp2','Bmp4','Ngf','Fgf7','Fgf10','Fgf22','Igf1','Ctgf','Mmp3','Mmp13','Defb1','Defb6','Epgn','Mmp2','Angpt1','Hgf','Cyr61','Inhbb','Btc','Ereg','Lep','Vegfc','Vegfd','Pdgfc','Cxcl12','Shh','Dhh','Ihh','Dll3','Dll4','Wnt1','Wnt2','Wnt3a','Wnt5a','Wnt6','Wnt7a','Wnt7b','Wnt8a','Wnt8b','Wnt9a','Wnt9b','Wnt10a','Wnt16','Chat','Thbs1','Fam46a','Kcna4','Fam129b','Tdpoz4','Rassf6','Ero1l','Cd244','A430078G23Rik','D1Ertd622e','Fam49a')
+
+signatures <- map(.x = signatures, .f = ~ .x[!(.x %in% blacklist_elements)])
+
+seurat <- AddModuleScore_UCell(seurat, features = signatures, name = NULL)
+
+# Scale signatures (z-score) for comparison and visualization purposes
+seurat@meta.data  <-  seurat@meta.data |>
+    mutate(across(names(signatures), ~ scale(.x, center = T, scale = T), .names = '{col}_scaled'))
+ # Visualization
+signature_violin_plot <- function (signature) {
+    max_y <- max(seurat@meta.data |> pull(signature))
+    plot1 <- VlnPlot(seurat, features = signature, group.by = 'Groups', pt.size = 0, cols = group_colors) +
+                labs(title = signature, x = NULL) + NoLegend() +
+                ylim(0, max_y*1.65) +
+                ggpubr::stat_compare_means(comparisons = list(c('Abau', 'Ftula'), c('Abau', 'CT'), c('Ftula', 'CT')), label = 'p.signif', method = 'wilcox.test',  hide.ns = F, label.y = max_y*1.1 , step.increase = 0.18, bracket.size = 0.7, size = 3) 
+    ggsave(plot = plot1, filename = paste0('VlnPlot_', signature, '_by_group_', object_annotations, '.pdf'), path = figures_path, width = 5, height = 4)
+    return(plot1)
+}
+
+signature_dot_plot <- function (signature) {
+    plot1 <- DotPlot_scCustom(seurat, features = signatures[[signature]] |> rev() |> unique() , group.by = 'Groups', colors_use = sequential_palette_dotplot, flip_axes = T, scale = F, dot.scale = 6) + labs(title = signature)
+    ggsave(plot = plot1, filename = paste0('DotPlot_', signature, '_by_groups_', object_annotations, '.pdf'), path = figures_path, width = 5, height = length(signatures[[signature]])/4 + 1)
+    return(plot1)
+}
+signature_feature_plot <- function (signature) {
+    min_value  <-  min(seurat@meta.data |> pull(paste0(signature, '_scaled')))
+    max_value  <-  max(seurat@meta.data |> pull(paste0(signature, '_scaled')))
+    cut_off_value <- min(abs(min_value), abs(max_value))
+    plot1 <- FeaturePlot_scCustom(seurat, features = paste0(signature, '_scaled'), colors_use = diverging_palette_3, na_cutoff=NULL, min.cutoff = -1*cut_off_value, max.cutoff = cut_off_value, pt.size = 0.1, alpha_exp = 0.2) + labs(title = signature, x = 'UMAP 1', y = 'UMAP 2')
+    ggsave(plot = plot1, filename = paste0('FeaturePlot_', signature, '_', object_annotations, '.pdf'), path = figures_path, width = 5, height = 5)
+    return(plot1)
+}
+
+
+```
+
+```{r}
+full_object_original$signature_violin_plots <- map(names(signatures), signature_violin_plot)
+names(full_object_original$signature_violin_plots) <- names(signatures)
+
+full_object_original$signature_dot_plots <- map(names(signatures), signature_dot_plot)
+names(full_object_original$signature_dot_plots) <- names(signatures)
+
+full_object_original$signature_feature_plots <- map(names(signatures), signature_feature_plot)
+full_object_original$signature_feature_plots <- names(signatures)
+
+cut_off_value <- 1.5
+signature_cycling_features <- list()
+signature_cycling_features[[1]] <-
+FeaturePlot_scCustom(seurat, features = paste0('Cycling_G2M', '_scaled'), colors_use = diverging_palette_2, na_cutoff=NULL, min.cutoff = -1*cut_off_value, max.cutoff = cut_off_value, pt.size = 0.1, alpha_exp = 0.3) + labs(title = 'Cycling_G2M')
+signature_cycling_features[[2]] <- FeaturePlot_scCustom(seurat, features = paste0('Cycling_S', '_scaled'), colors_use = diverging_palette_2, na_cutoff=NULL, min.cutoff = -1*cut_off_value, max.cutoff = cut_off_value, pt.size = 0.1, alpha_exp = 0.3) + labs(title = 'Cycling_S')
+```
+
+# Generate cell cycle regressed object plots
+
+```{r}
+seurat <- seurat_cell_cycle
+```
+
+## DimPlots and cluster frequency
+
+```{r}
+Idents(seurat) <- 'seurat_clusters'
+
+total_cell_number <- Cells(seurat) |> length()
+Abau_cell_number <- Cells(seurat_Abau) |> length()
+Ftula_cell_number <- Cells(seurat_Ftula) |> length()
+
+# Clusters UMAP plot
+full_object_regressed$DimPlot <- DimPlot(seurat, group.by = 'seurat_clusters', pt.size = 0.5, label = F) +
+     labs(title = 'MAIT cell Leiden clusters', 
+        #   subtitle = 'Lung single-cell RNA-seq', 
+        #   caption = 'n = 4 Abau, n = 5 Ftula, n = 4 CT',
+     x = 'UMAP 1', y = 'UMAP 2')  
+full_object_regressed$DimPlot <- full_object_regressed$DimPlot  |> LabelClusters(id = 'seurat_clusters', size = 4, color = 'black', repel = F, fontface = 'bold') 
+
+# Clusters split by group plot
+full_object_regressed$DimPlot_groups <- DimPlot(seurat, group.by = 'seurat_clusters', pt.size = 0.5, label = F, split.by = 'Groups') +
+     labs( x = 'UMAP 1', y = 'UMAP 2', title = NULL)  
+
+# Cluster frequency plot
+seurat_local <- subset(seurat, subset = Groups != 'CT')
+cell_counts <- FetchData(seurat_local, vars = c("seurat_clusters", "Samples", "Groups"))
+cell_counts <- arrange(cell_counts, Samples)
+counts <- cell_counts %>% 
+    add_count(Groups, name='total_cell_count_by_group')  |>
+    mutate(weights = total_cell_count_by_group/Abau_cell_number)  |>
+    add_count(seurat_clusters, name='total_cell_count_by_cluster', wt =  weights)  |>
+    count(seurat_clusters, Samples, Groups, total_cell_count_by_cluster , name='sample_cluster_count', wt = weights)  |> 
+    mutate(frequency_within_cluster=sample_cluster_count*100/total_cell_count_by_cluster)  |> 
+    mutate(Samples = as.character(Samples)) |> 
+    arrange(Samples, desc(Samples)) 
+frequency_table <- counts |> 
+    arrange(Samples) |>     
+    pivot_wider(id_cols = seurat_clusters,  names_from =  Samples , values_from = frequency_within_cluster, values_fill = 0)
+# write.csv(frequency_table,file=here(tables_path, paste0( "frequency per roll }} per condition " , ".csv")), row.names=F) 
+
+full_object_regressed$cluster_frequency <- counts |>
+    ggplot(aes(x=seurat_clusters, fill=Groups, y = frequency_within_cluster)) +
+    geom_col(aes(), position = 'fill') +
+    # geom_bar(position=position_fill()) +
+    theme_classic() +
+    labs(x = 'Cluster', y = 'Frequency (%)', title = 'MAIT normalized cell cluster frequency by sample')+
+    scale_y_continuous(expand = expansion(mult = c(0, 0)), breaks = c(0, 0.25, 0.5, 0.75, 1), labels = c(0, 25, 50, 75, 100))+
+    scale_fill_discrete(palette = group_colors) 
+
+```
+
+## Feature plots
+
+```{r}
+
+#  cluster Markers dot plot
+seurat <- PrepSCTFindMarkers(seurat)
+full_object_regressed$cluster_dotplot <- top_genes_per_cluster(seurat, n_genes_to_plot = 3, object_annotations = '', tables_path = tables_path, figures_path = figures_path, results_path = results_path, run_pathway_enrichment = F) 
+ggsave(plot = full_object_regressed$cluster_dotplot, filename = here(figures_path,  paste0('DotPlot_Top3_per_cluster', '.pdf')), width = 8, height = 12)
+
+
+type_17_markers <- c('Rorc', 'Il17a', 'Sdc1', 'Il7r', 'Il1r1', 'Ccr6', 'Sdc4')
+type_1_markers <- c('Tbx21', 'Ifng', 'I12rb2', 'Cxcr3', 'Gzmb', 'Gzmk', 'Klrg1', 'Klrd1', 'Ly6c2')
+naive_markers <- c('S1pr1', 'Ccr7', 'Sell', 'Tcf7', 'Lef1')
+regulatory_markers <- c('Arg2', 'Il10', 'Il21')
+exhaustion_markers <- c('Ctla4', 'Pdcd1', 'Lag3', 'Tigit', 'Havcr2')
+tissue_repair_markers <- c('Areg', 'Ramp3','Il18r1', 'Tgfb1', 'Tnf', 'Mmp25', 'Cxcl10', 'Rankl', 'Ifrd1')
+transcription_factors <- c('Tbx21', 'Rorc', 'Gata3', 'Foxp3', 'Ahr', 'Maf', 'Prdm1', 'Bcl6', 'Zbtb16')
+tissue_residency <- c('Itgae', 'Klrg1', 'Itga1', 'Itga2', 'Ccr9', 'Ccr10', 'Itga4', 'Itgb7')
+activation_markers <- c('Cd69', 'Cd44', 'Nr4a1')
+cytokines <- c('Ifng', 'Il17a', 'Il17f', 'Il4', 'Il10', 'Tgfb1', 'Tnf', 'Il2', 'Gzma', 'Gzmb', 'Nkg7', 'Ccl5', 'Il27ra', 'Ifgnr1')
+costimulatory_receptors <- c('Ctla4', 'Lag3', 'Tigit', 'Havcr2', 'Cd28', 'Cd40lg', 'Pdcd1', 'Tnfsf4', 'Cd27', 'Tnfrsf9')
+
+final_list <- c(type_17_markers, type_1_markers, naive_markers, regulatory_markers, exhaustion_markers, tissue_repair_markers, transcription_factors, tissue_residency, activation_markers, cytokines, costimulatory_receptors) |> unique() |> rev()
+
+# final_gene_list <- 
+
+# Idents(seurat) <- 'seurat_clusters'
+# DotPlot_scCustom(seurat, features = final_list, colors_use=sequential_palette_dotplot, flip_axes = T, scale = T, col.min = 0, col.max = 2, dot.scale = 8, dot.min = 0, scale.min = 0, scale.max = 60, x_lab_rotate = T, y_lab_rotate = F)  + theme(axis.text.x = element_text(size = 14), axis.text.y = element_text(size = 14), legend.title = element_text(size = 18))
+# ggsave(filename = here(figures_path, 'Dotplot_markers.pdf'), width = 25,height = 5)
+# Idents(seurat) <- 'Groups'
+# DotPlot_scCustom(seurat, features = final_list, colors_use=sequential_palette_dotplot, flip_axes = F, scale = F, col.min = 0, col.max = 2, dot.scale = 8, dot.min = 0, scale.min = 0, scale.max = 60, x_lab_rotate = T, y_lab_rotate = F)  + theme(axis.text.x = element_text(size = 14), axis.text.y = element_text(size = 14), legend.title = element_text(size = 18))
+
+feature_plot <- function (gene) {
+    plot1 <- FeaturePlot_scCustom(seurat, features = gene,  colors_use = sequential_palette, pt.size = 1) + labs(title = gene, x = 'UMAP 1', y = 'UMAP 2')
+    ggsave(plot = plot1, filename = paste0('FeaturePlot', gene, '_', object_annotations, '.pdf'), path = figures_path, width = 5, height = 5)
+    return(plot1)
+}
+genes_to_plot <- c('Rorc', 'Il17a', 'Sdc1', 'Il7r', 'Il1r1', 'Ccr6', 'Tbx21', 'Ifng', 'Il12rb2', 'Cxcr3', 'Gzmb', 'Gzmk', 'Gzma', 'Gzmm', 'Klrg1', 'Klrd1', 'Ly6c2', 'Ramp3', 'Slamf7', 'Areg')
+full_object_regressed$feature_plots <- genes_to_plot |> 
+    set_names() |>
+    map(feature_plot )
+
+```
+
+## Signature scores
+
+```{r}
+
+DefaultAssay(seurat) <- 'SCT'
+signatures <- read_excel(here('data/Hagoulet_signatures.xlsx'), skip = 1)
+signatures <- signatures |>
+    dplyr::filter(!(row_number() == 1)) |>
+    dplyr::select(-all_of(c('Signature', 'Tissue repair 1', 'Tissue repair 2', 'Tissue repair 3', 'Tissue repair 4')))
+    
+signatures <- map(.x = signatures, .f = ~ purrr::discard(.x, is.na)) |> as.list()
+
+
+tissue_repair_linehan <- c('Angpt1', 'Angpt2', 'Angpt4', 'Areg', 'Bmp2', 'Bmp4', 'Bmp7', 'Btc', 'Ccl2', 'Ccl3', 'Chat', 'Csf1', 'Csf2', 'Ctgf', 'Cxcl1', 'Cxcl10', 'Cxcl12', 'Cxcl15', 'Cxcl2', 'Cyr61', 'Defb1', 'Defb6', 'Dhh', 'Disp1', 'Dll1', 'Dll3', 'Dll4', 'Egf', 'Epgn', 'Ereg', 'Fgf1', 'Fgf10', 'Fgf22', 'Fgf7', 'Flg', 'Flg2', 'Furin', 'Hbegf', 'Hgf', 'Hif1a', 'Hmgb1', 'Igf1', 'Igf2', 'Ihh', 'Il1a', 'Il1b', 'Il6', 'Inhba', 'Inhbb', 'Jag1', 'Jag2', 'Lep', 'Mmp10', 'Mmp13', 'Mmp15', 'Mmp2', 'Mmp25', 'Mmp28', 'Mmp3', 'Ngf', 'Nrg1', 'Nrg2', 'Nrg3', 'Nrg4', 'Pdgfa', 'Pdgfb', 'Pdgfc', 'Pgf', 'Ptges2', 'Shh', 'Tgfa', 'Tgfb1', 'Tgfb2', 'Tgfb3', 'Thbs1', 'Tnf', 'Vegfa', 'Vegfb', 'Vegfc', 'Vegfd', 'Wnt1', 'Wnt10a', 'Wnt10b', 'Wnt11', 'Wnt16', 'Wnt2', 'Wnt2b', 'Wnt3', 'Wnt3a', 'Wnt4', 'Wnt5a', 'Wnt5b', 'Wnt6', 'Wnt7a', 'Wnt7b', 'Wnt8a', 'Wnt8b', 'Wnt9a', 'Wnt9b')
+
+signatures$tissue_repair <- tissue_repair_linehan
+
+# Removing genes that are not detected
+blacklist_elements <- c('H2afz','Smsc2','Hist1h2ap','Flg','Flg2','Bmp2','Bmp4','Ngf','Fgf7','Fgf10','Fgf22','Igf1','Ctgf','Mmp3','Mmp13','Defb1','Defb6','Epgn','Mmp2','Angpt1','Hgf','Cyr61','Inhbb','Btc','Ereg','Lep','Vegfc','Vegfd','Pdgfc','Cxcl12','Shh','Dhh','Ihh','Dll3','Dll4','Wnt1','Wnt2','Wnt3a','Wnt5a','Wnt6','Wnt7a','Wnt7b','Wnt8a','Wnt8b','Wnt9a','Wnt9b','Wnt10a','Wnt16','Chat','Thbs1','Fam46a','Kcna4','Fam129b','Tdpoz4','Rassf6','Ero1l','Cd244','A430078G23Rik','D1Ertd622e','Fam49a')
+
+signatures <- map(.x = signatures, .f = ~ .x[!(.x %in% blacklist_elements)])
+
+seurat <- AddModuleScore_UCell(seurat, features = signatures, name = NULL)
+
+# Scale signatures (z-score) for comparison and visualization purposes
+seurat@meta.data  <-  seurat@meta.data |>
+    mutate(across(names(signatures), ~ scale(.x, center = T, scale = T), .names = '{col}_scaled'))
+ # Visualization
+signature_violin_plot <- function (signature) {
+    max_y <- max(seurat@meta.data |> pull(signature))
+    plot1 <- VlnPlot(seurat, features = signature, group.by = 'Groups', pt.size = 0, cols = group_colors) +
+                labs(title = signature, x = NULL) + NoLegend() +
+                ylim(0, max_y*1.65) +
+                ggpubr::stat_compare_means(comparisons = list(c('Abau', 'Ftula'), c('Abau', 'CT'), c('Ftula', 'CT')), label = 'p.signif', method = 'wilcox.test',  hide.ns = F, label.y = max_y*1.1 , step.increase = 0.18, bracket.size = 0.7, size = 3) 
+    ggsave(plot = plot1, filename = paste0('VlnPlot_', signature, '_by_group_', object_annotations, '.pdf'), path = figures_path, width = 5, height = 4)
+    return(plot1)
+}
+
+signature_dot_plot <- function (signature) {
+    plot1 <- DotPlot_scCustom(seurat, features = signatures[[signature]] |> rev() |> unique() , group.by = 'Groups', colors_use = sequential_palette_dotplot, flip_axes = T, scale = F, dot.scale = 6) + labs(title = signature)
+    ggsave(plot = plot1, filename = paste0('DotPlot_', signature, '_by_groups_', object_annotations, '.pdf'), path = figures_path, width = 5, height = length(signatures[[signature]])/4 + 1)
+    return(plot1)
+}
+signature_feature_plot <- function (signature) {
+    min_value  <-  min(seurat@meta.data |> pull(paste0(signature, '_scaled')))
+    max_value  <-  max(seurat@meta.data |> pull(paste0(signature, '_scaled')))
+    cut_off_value <- min(abs(min_value), abs(max_value))
+    plot1 <- FeaturePlot_scCustom(seurat, features = paste0(signature, '_scaled'), colors_use = diverging_palette_3, na_cutoff=NULL, min.cutoff = -1*cut_off_value, max.cutoff = cut_off_value, pt.size = 0.1, alpha_exp = 0.2) + labs(title = signature, x = 'UMAP 1', y = 'UMAP 2')
+    ggsave(plot = plot1, filename = paste0('FeaturePlot_', signature, '_', object_annotations, '.pdf'), path = figures_path, width = 5, height = 5)
+    return(plot1)
+}
+
+
+```
+
+```{r}
+full_object_regressed$signature_violin_plots <- map(names(signatures), signature_violin_plot)
+names(full_object_regressed$signature_violin_plots) <- names(signatures)
+
+full_object_regressed$signature_dot_plots <- map(names(signatures), signature_dot_plot)
+names(full_object_regressed$signature_dot_plots) <- names(signatures)
+
+full_object_regressed$signature_feature_plots <- map(names(signatures), signature_feature_plot)
+full_object_regressed$signature_feature_plots <- names(signatures)
+
+cut_off_value <- 1.5
+signature_cycling_features <- list()
+signature_cycling_features[[1]] <-
+FeaturePlot_scCustom(seurat, features = paste0('Cycling_G2M', '_scaled'), colors_use = diverging_palette_2, na_cutoff=NULL, min.cutoff = -1*cut_off_value, max.cutoff = cut_off_value, pt.size = 0.1, alpha_exp = 0.3) + labs(title = 'Cycling_G2M')
+signature_cycling_features[[2]] <- FeaturePlot_scCustom(seurat, features = paste0('Cycling_S', '_scaled'), colors_use = diverging_palette_2, na_cutoff=NULL, min.cutoff = -1*cut_off_value, max.cutoff = cut_off_value, pt.size = 0.1, alpha_exp = 0.3) + labs(title = 'Cycling_S')
+```
+
+
+## Milo
+
+```{r}
+library(miloR)
+library(SingleCellExperiment)
+library(scran)
+library(scater)
+
+# Convert to SingleCellExperiment
+Idents(seurat) <- 'Samples'
+DefaultAssay(seurat) <- 'RNA'
+seurat_sce <- as.SingleCellExperiment(seurat)
+reducedDim(seurat_sce, 'PCA') <- Embeddings(seurat, 'pca')
+reducedDim(seurat_sce, 'UMAP') <- Embeddings(seurat, 'umap')
+seurat_milo <- Milo(seurat_sce)
+k_used <- 30
+dimensions <- 30
+
+# Running MiloR
+trajectory_milo <- buildGraph(seurat_milo, k = k_used, d = dimensions, reduced.dim = 'PCA')
+trajectory_milo <- makeNhoods(trajectory_milo, prop = 0.1, k = k_used, d = dimensions, refined = T, reduced_dims = 'PCA')
+
+# Count cells in neighborhoods per sample
+trajectory_milo <- countCells(trajectory_milo, sample = 'Samples', meta.data = data.frame(colData(seurat_milo)))
+
+# DA testing preparation
+trajectory_design <- data.frame(colData(trajectory_milo))[, c('Samples', 'Groups')]
+trajectory_design <- distinct(trajectory_design)
+rownames(trajectory_design) <- trajectory_design$Samples
+trajectory_design <- trajectory_design[colnames(nhoodCounts(trajectory_milo)), , drop = FALSE ]
+trajectory_milo <- calcNhoodDistance(trajectory_milo, d = dimensions, reduced.dim = 'PCA')
+# trajectory_milo <- buildNhoodGraph(trajectory_milo)
+
+
+# Pairwise DA testing using contrasts Abau vs Ftula
+contrast <- c('GroupsAbau - GroupsFtula')
+da_results_Abau_vs_Ftula <- testNhoods(trajectory_milo, design = ~ 0 + Groups, design.df = trajectory_design, model.contrasts = contrast, fdr.weighting = 'graph-overlap', norm.method = 'TMM')
+da_results_Abau_vs_Ftula |> arrange(SpatialFDR) |> head()
+
+da_results_Abau_vs_Ftula <- annotateNhoods(trajectory_milo, da_results_Abau_vs_Ftula, coldata_col = 'seurat_clusters')
+da_results_Abau_vs_Ftula <- da_results_Abau_vs_Ftula |> mutate(seurat_clusters = factor(seurat_clusters, levels = levels(seurat$seurat_clusters) |> rev()))
+
+### Neighborhood differential gene expression analysis
+da_results_Abau_vs_Ftula <- annotateNhoods(trajectory_milo, da_results_Abau_vs_Ftula, coldata_col = 'seurat_clusters')
+trajectory_milo <- logNormCounts(trajectory_milo)
+
+# # manual grouping of neighborhoods
+# FCutoff <- 3
+# da_results_Abau_vs_Ftula |> 
+#     ggplot(aes(x = logFC)) +
+#     geom_histogram(bins = 100) +
+#     geom_density() +
+#     theme_classic()
+# da_results_Abau_vs_Ftula <- da_results_Abau_vs_Ftula |>
+#     mutate(NhoodGroup = case_when(logFC > 0 & logFC < FCutoff & SpatialFDR < 0.05 ~ 'Abau_enriched_log2FC_0-5',
+#                             logFC >= FCutoff  & SpatialFDR < 0.05 ~ 'Abau_enriched_log2FC_5',
+#                             logFC < 0 & logFC > -FCutoff & SpatialFDR < 0.05 ~ 'Ftula_enriched_log2FC_0-5',
+#                             logFC <= -FCutoff  & SpatialFDR < 0.05 ~ 'Ftula_enriched_log2FC_5',
+#                             TRUE ~ 'Not_significant')) 
+# # plotDAbeeswarm(da_results_Abau_vs_Ftula, group.by = 'NhoodGroup', alpha = 0.05)                            
+# # plotNhoodGroups(trajectory_milo, da_results_Abau_vs_Ftula, layout = 'UMAP', alpha = 0.05)
+# nhood_markers <- findNhoodGroupMarkers(trajectory_milo, da_results_Abau_vs_Ftula, aggregate.samples = F, sample_col = 'Samples')
+# nhood_markers |> pivot_longer(cols = starts_with('adj'), names_to = 'neighborhood', values_to = 'adj_pval', names_prefix = 'adj.P.Val_')   |>
+#     pivot_longer(cols = starts_with('log'), names_to = 'neighborhood2', values_to = 'logFC', names_prefix = 'logFC_')    |> filter(neighborhood == neighborhood2)
+# nhood_markers <- nhood_markers |>
+#     as_tibble() |>
+#     pivot_longer(cols = starts_with('adj'), names_to = 'neighborhood', values_to = 'adj_pval', names_prefix = 'adj.P.Val_')  |>
+#     pivot_longer(cols = starts_with('log'), names_to = 'neighborhood2', values_to = 'logFC', names_prefix = 'logFC_')   |>
+#     filter(neighborhood == neighborhood2)     |>
+#     select(-neighborhood2) |>
+#     filter(adj_pval < 0.05 & logFC > 0.2) |> 
+#     group_by(neighborhood) |>
+#     slice_max(order_by = logFC, n = 25) |>
+#     ungroup() |>
+ #     arrange(neighborhood, desc(logFC))
+# #Topn markers
+# nhood_markers |> 
+#     group_by(neighborhood)  |> 
+#     arrange(desc(logFC)) |>
+#     slice_head(n = 10) -> topn
+
+trajectory_milo <- buildNhoodGraph(trajectory_milo)
+
+da_results_Abau_vs_Ftula <- groupNhoods(trajectory_milo, da_results_Abau_vs_Ftula, max.lfc.delta = 3, overlap = 3, da.fdr = 0.05, compute.new = T, original.behaviour = F )
+plotDAbeeswarm(da_results_Abau_vs_Ftula, group.by = 'NhoodGroup', alpha = 0.05)
+plotNhoodGroups(trajectory_milo, da_results_Abau_vs_Ftula, layout = 'UMAP', alpha = 0.05) 
+nhood_markers <- findNhoodGroupMarkers(trajectory_milo, da_results_Abau_vs_Ftula, aggregate.samples = F)
+nhood_markers |> pivot_longer(cols = starts_with('adj'), names_to = 'neighborhood', values_to = 'adj_pval', names_prefix = 'adj.P.Val_')   |>
+    pivot_longer(cols = starts_with('log'), names_to = 'neighborhood2', values_to = 'logFC', names_prefix = 'logFC_')    |> filter(neighborhood == neighborhood2)
+nhood_markers <- nhood_markers |>
+    as_tibble() |>
+    pivot_longer(cols = starts_with('adj'), names_to = 'neighborhood', values_to = 'adj_pval', names_prefix = 'adj.P.Val_')  |>
+    pivot_longer(cols = starts_with('log'), names_to = 'neighborhood2', values_to = 'logFC', names_prefix = 'logFC_')   |>
+    filter(neighborhood == neighborhood2)     |>
+    select(-neighborhood2) |>
+    filter(adj_pval < 0.05 & logFC > 0.2) |> 
+    group_by(neighborhood) |>
+    slice_max(order_by = logFC, n = 25) |>
+    ungroup() |>
+    arrange(neighborhood, desc(logFC)) |>
+    mutate(neighborhood = fct_inseq(neighborhood))
+#Topn markers
+nhood_markers |> 
+    group_by(neighborhood)  |> 
+    arrange(desc(logFC)) |>
+    slice_head(n = 6) -> topn
+
+da_results_Abau_vs_Ftula$NhoodGroup |> levels()
+
+```
+
+```{r}
+
+local_path <- here(results_path, paste0('MiloR', '_neighborhood_identification_functional_analysis'))
+unlink(local_path, recursive = T)
+dir.create(local_path)
+for (neighborhood in levels(nhood_markers$neighborhood)) {
+     name <- paste0('Neighborhood_', neighborhood)
+     significant_results <- nhood_markers |> 
+          filter(neighborhood == {{neighborhood}}) |>
+          pull(GeneID) |>
+          unique()
+        if (length(significant_results) < 3) {
+          next
+              }
+#   Metascape_overrepresentation_analysis(significant_genes_FC_ordered = significant_results, path = local_path, group = '', filename =  name,  grouping_var =  neighborhood )
+    all_genes <- Features(seurat[['RNA']]) |>unique()
+    GO_overrepresentation_analysis(significant_results,
+        all_genes,
+        local_path = local_path,
+        ontology = 'ALL',
+        minGSSize = 4,
+        maxGSSize = 400,
+        group = neighborhood,
+        filename = paste0(neighborhood, '_'))
+  }
+
+```
+
+```{r}
+da_results_Abau_vs_Ftula <- da_results_Abau_vs_Ftula |>
+    mutate(NhoodGroup = fct_inseq(NhoodGroup))
+    # mutate(NhoodGroup = as.character(NhoodGroup))
+da_results_Abau_vs_Ftula |> colnames()
+plotNhoodExpressionGroups(trajectory_milo, da_results_Abau_vs_Ftula,
+                          features = topn$GeneID |> unique() |> rev(),
+                          scale = T,
+                        grid.space = 'fixed'
+                          )
+da_results_Abau_vs_Ftula <- da_results_Abau_vs_Ftula |>
+    # mutate(NhoodGroup = fct_inseq(NhoodGroup))
+    mutate(NhoodGroup = as.character(NhoodGroup))
+    
+```
+
+### Milo figures
+
+```{r}
+#Visualize Neighborhoods
+full_object_regressed$Milo_figures <- list()
+full_object_regressed$Milo_figures[['neighborhood_graph']] <- plotNhoodGraphDA(trajectory_milo, da_results_Abau_vs_Ftula, layout = 'UMAP', alpha = 0.1) + 
+     scale_fill_continuous(palette = diverging_palette_2) +
+     theme_classic() + 
+     labs(title = 'MiloR: Abau vs Ftula', fill = 'log2FC\n(Abau/Ftula)', size = 'Neighborhood size', x = 'UMAP 1', y = 'UMAP 2')+ 
+    guides(edge_width = 'none', size = 'none')
+ggsave(plot = full_object_regressed$Milo_figures[['neighborhood_graph']], filename = 'MiloR_Neighborhoods_DA_Abau_vs_Ftula.pdf', path = figures_path, width = 5, height = 5)
+
+full_object_regressed$Milo_figures[['beeswarm_graph']] <- plotDAbeeswarm(da_results_Abau_vs_Ftula, group.by = 'seurat_clusters', alpha = 0.05)
+da.res <- full_object_regressed$Milo_figures[['beeswarm_graph']]@data
+n_groups <- length(levels(da.res$group_by))
+full_object_regressed$Milo_figures[['beeswarm_graph']] <- da.res |> 
+    ggplot(aes(pos_x, pos_y, color=logFC_color)) +
+    scale_color_gradient2() +
+    guides(color="none") +
+    xlab('seurat_clusters') + ylab("Log Fold Change") +
+    scale_x_continuous(
+      breaks = seq(1,n_groups),
+      labels = setNames(levels(da.res$group_by), seq(1,n_groups))
+      ) +
+    geom_point(size = .5) +
+    coord_flip() +
+    theme_bw(base_size=22) +
+    theme(strip.text.y =  element_text(angle=0)) +
+    scale_color_continuous(palette = diverging_palette_2) +
+    labs(x = 'Leiden clusters', y = 'log2FC(Abau/Ftula)', color = 'log2FC\n(Abau/Ftula)')
+ggsave(plot = full_object_regressed$Milo_figures[['beeswarm_graph']], filename = 'MiloR_Beeswarm_DA_Abau_vs_Ftula.pdf', path = figures_path, width = 7, height = 5)
+
+#Visualize Neighborhoods
+full_object_regressed$Milo_figures[['neighborhood_cluster_graph']] <- plotNhoodGroups(trajectory_milo, da_results_Abau_vs_Ftula, layout = 'UMAP', alpha = 0.1) + 
+    #  scale_fill_continuous(palette = diverging_palette_2) +
+     theme_classic() + 
+     labs(title = 'MiloR: Abau vs Ftula', size = 'Neighborhood size', x = 'UMAP 1', y = 'UMAP 2')+ 
+    guides(edge_width = 'none', size = 'none')
+ggsave(plot = full_object_regressed$Milo_figures[['neighborhood_cluster_graph']], filename = 'MiloR_Neighborhoods_Clusters_DA_Abau_vs_Ftula.pdf', path = figures_path, width = 5, height = 5)
+
+da_results_Abau_vs_Ftula <- da_results_Abau_vs_Ftula |>
+    mutate(NhoodGroup = fct_inseq(NhoodGroup))
+full_object_regressed$Milo_figures[['beeswarm_graph_neighborhood_cluster']] <- plotDAbeeswarm(da_results_Abau_vs_Ftula, group.by = 'NhoodGroup',  alpha = 0.05)
+da.res <- full_object_regressed$Milo_figures[['beeswarm_graph_neighborhood_cluster']]@data
+n_groups <- length(levels(da.res$group_by))
+full_object_regressed$Milo_figures[['beeswarm_graph_neighborhood_cluster']] <- da.res |> 
+    ggplot(aes(pos_x, pos_y, color=logFC_color)) +
+    scale_color_gradient2() +
+    guides(color="none") +
+    xlab('seurat_clusters') + ylab("Log Fold Change") +
+    scale_x_continuous(
+      breaks = seq(1,n_groups),
+      labels = setNames(levels(da.res$group_by), seq(1,n_groups))
+      ) +
+    geom_point(size = .5) +
+    coord_flip() +
+    theme_bw(base_size=22) +
+    theme(strip.text.y =  element_text(angle=0)) +
+    scale_color_continuous(palette = diverging_palette_2) +
+    labs(x = 'Neighborhood clusters', y = 'log2FC(Abau/Ftula)', color = 'log2FC\n(Abau/Ftula)')
+ggsave(plot = full_object_regressed$Milo_figures[['beeswarm_graph_neighborhood_cluster']], filename = 'MiloR_Beeswarm_NhoodClusters_DA_Abau_vs_Ftula.pdf', path = figures_path, width = 7, height = 5)
+
+
+# gene_list_plot <- topn |> pull(GeneID) |> unique() |> rev()
+# Idents(seurat) <- 'seurat_clusters'
+# DotPlot_scCustom(seurat,
+#                 features = gene_list_plot,
+#                 colors_use=sequential_palette_dotplot,
+#                 flip_axes = T,
+#                 dot.scale = 8,
+#                 dot.min = 0,
+#                 scale.min = 0,
+#                 scale.max = 80,
+#                 x_lab_rotate = T,
+#                 y_lab_rotate = F) +
+#     theme(axis.text.x = element_text(size = 14),
+#         axis.text.y = element_text(size = 14),
+#         legend.title = element_text(size = 18))
+
+# local_path <- here(results_path, pcaste0('MiloR', '_neighborhood_identification_functional_analysis'))
+# unlink(local_path, recursive = T)
+# dir.create(local_path)
+# for (neighborhood in unique(nhood_markers$neighborhood)) {
+#      name <- paste0('Neighborhood_', neighborhood)
+#      significant_results <- nhood_markers |> 
+#           filter(neighborhood == {{neighborhood}}) |>
+#           pull(GeneID) |>
+#           unique()
+#         if (length(significant_results) < 3) {
+#           next
+#               }
+#   Metascape_overrepresentation_analysis(significant_genes_FC_ordered = significant_results, path = local_path, group = '', filename =  name,  grouping_var =  neighborhood )
+#   }
+
+full_object_regressed$Milo_figures |> walk(print)
+
+```
+
+
+## Differential gene expression analysis
+
+```{r}
+## Differential gene expression analysis 
+
+Here I implement pseudobulk analysis utilizing the biological replicates of the experiment (this is one of the preferred approaches in the literature, and statistically more sound than using Wilcoxon test considering each cell as a replicate)
+
+
+
+```{r}
+seurat <- readRDS(here('data/MAIT_Abau_Ftula_CT_Lungs.rds'))
+```
+
+```{r}
+#| fig-width: 7
+#| #| fig-height: 7
+#| layout-ncol: 2
+#| results: hide
+source(here('scripts/metascape_functions.r'))
+source(here('scripts/function_template.r'))
+source(here('scripts/ClusterProfiler_functions.r'))
+pathway_enrichment <- c('clusterprofiler') 
+
+path <- here(results_path, 'DEG_pseudobulk_analysis_Abau_vs_Ftula')
+unlink(path, recursive = T)
+dir.create(path)
+Idents(seurat) <- 'seurat_clusters'
+
+output <- pseudobulk(seurat, comparison='Samples', group1='Ftula', group2='Abau', cluster= 'all_MAITs' , path=path, label_threshold = 10000, max_overlaps = 20,gene_lists_to_plot = NA, FC_threshold = 1,p_value_threshold = 0.05, run_pathway_enrichment = pathway_enrichment, minGSSize = 4, maxGSSize = 400, drop_levels = T, levels_to_drop = c(1), ontology = 'BP')
+
+# output$results |> colnames()
+
+# results <- output$results
+# results
+# source(here('scripts/ClusterProfiler_functions.r'))
+# # GO_functional_analysis(results,  cluster = 'all_MAITs', path= path, FC_threshold = 1, p_value_threshold = 0.05, group1 = 'Ftula', group2 = 'Abau', minGSSize = 4, maxGSSize = 400, drop_levels = T, levels_to_drop = c(1), ontology = 'BP')
+# ```
+
+```
+
+# Assembling figures
+
+```{r}
+#| fig-width: 8
+#| #| fig-height: 10
+plot_layout <- "
+ABBB
+"
+
+row_one <- wrap_plots(full_object_original[1:2], guides = 'collect', design = plot_layout) & guides(color = guide_legend(override.aes = list(size=2), ncol = 2)) 
+ 
+plot_layout <- 'ABB'
+row_two <- wrap_plots( full_object_original[[3]], wrap_plots(Milo_figures[['neighborhood_graph']], Milo_figures[['beeswarm_graph']], guides = 'collect') , design = plot_layout)
+
+plot_layout <- 'ABCD'
+row_three <- wrap_plots(Milo_figures[['neighborhood_graph']], Milo_figures[['neighborhood_cluster_graph']], Milo_figures[['beeswarm_graph']], Milo_figures[['beeswarm_graph_Ncluster']], design = plot_layout)
+
+row_four <- wrap_plots( signature_feature_plots[['Cycling_G2M']],
+                signature_feature_plots[['Cycling_S']],
+                signature_feature_plots[['tissue_repair']])
+
+plot_layout <- "
+    AAAA
+    BBBB
+    CCCC
+    DDDD
+    EFG#
+    ###Z 
+    "
+names(signatures)
+wrap_plots(list(row_one, 
+                row_two,
+                row_three,
+                row_four,
+                signature_violin_plots[['MAIT1']],
+                signature_violin_plots[['MAIT17']],
+                signature_violin_plots[['tissue_repair']],
+                signature_violin_plots[['Tissue residency']]
+                ),
+                design = plot_layout) +
+    plot_annotation(tag_levels = 'A') &
+    theme(
+        plot.title = element_text(size = 9), 
+        plot.subtitle = element_text(size = 8),
+        plot.caption = element_text(size = 8),
+        axis.text = element_text(size = 8),
+        axis.title = element_text(size = 9),
+        axis.title.y = element_text(margin = margin(r = 0)),
+        axis.title.x = element_text(margin = margin(t = 0)),
+        legend.title = element_text(size = 8),
+        legend.text = element_text(size = 7),
+        legend.key.size = unit(0.3, 'cm'),
+        plot.margin = margin(4, 4, 4, 4),
+        legend.box.spacing = unit(0.05, 'cm')
+        # legend.key.width = unit(0.3, 'cm')
+        # legend.spacing = unit(0.1, 'cm')
+        )
+```

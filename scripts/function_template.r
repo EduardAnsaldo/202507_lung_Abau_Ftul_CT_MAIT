@@ -304,7 +304,7 @@ volcano_plot <- function (results_scatter, group1, group2, cluster, my_colors, l
 
 # Pseudobulk function
 
-pseudobulk <- function (scRNAseq, comparison, group1, group2, cluster='all_clusters', path='./', FC_threshold = 0.3, p_value_threshold = 0.05, max_overlaps = 15, label_size = 5, pathways_of_interest = NULL, label_threshold = 100000, distance_from_diagonal_threshold = 0.4, gene_lists_to_plot = NULL, expression_threshold_for_gene_list = 20, colors = c('green4', 'darkorchid4'), minimum_cell_number = 10, run_pathway_enrichment = T, genes_to_exclude = c()) {
+pseudobulk <- function (scRNAseq, comparison, group1, group2, cluster='all_clusters', path='./', FC_threshold = 0.3, p_value_threshold = 0.05, max_overlaps = 15, label_size = 5, pathways_of_interest = NULL, label_threshold = 100000, distance_from_diagonal_threshold = 0.4, gene_lists_to_plot = NULL, expression_threshold_for_gene_list = 20, colors = c('green4', 'darkorchid4'), minimum_cell_number = 10, run_pathway_enrichment = F, genes_to_exclude = c(), ...) {
 
     # Subset seurat object
     scRNAseq <- subset(scRNAseq, subset = (str_detect(!!as.name(comparison), group1) | str_detect(!!as.name(comparison), group2)))
@@ -443,12 +443,16 @@ pseudobulk <- function (scRNAseq, comparison, group1, group2, cluster='all_clust
     volcano_plot(results_scatter, group1, group2, cluster, my_colors, local_figures_path, FC_threshold, p_value_threshold, max_overlaps = 15, label_size, label_threshold, test_type ='Pseudobulk')
 
     ########## Overrepresentation analysis ##########
-    if (run_pathway_enrichment) {
+    if ('metascape' %in% run_pathway_enrichment){
         Metascape_functional_analysis(results,  grouping_var = cluster, group1 = group1, group2 = group2, path= path , FC_threshold = FC_threshold)
-        if (!is.null(pathways_of_interest)) {
+    } 
+    if ('clusterprofiler' %in% run_pathway_enrichment){
+        GO_functional_analysis(results,  cluster, path= path, FC_threshold = FC_threshold, p_value_threshold = p_value_threshold, group1 = group1, group2 = group2, ...) 
+    }
+     
+    if (!is.null(pathways_of_interest)) {
             pathways_of_interest_analysis(results = results, pathways_of_interest = pathways_of_interest,  cluster = cluster, path = path, group1 = group1, group2 = group2, comparison = comparison)
         }
-    }
 
     ########## Plotting individual genes of interest ##########
     if (!is.null(gene_lists_to_plot)) {
@@ -462,7 +466,7 @@ pseudobulk <- function (scRNAseq, comparison, group1, group2, cluster='all_clust
         }
     }   
     
-    return(c(all_count=DEG_count, UP_count=DEG_UP_count, DOWN_count=DEG_DOWN_count))    
+    return(list(all_count=DEG_count, UP_count=DEG_UP_count, DOWN_count=DEG_DOWN_count,  results  = results))    
 }                                                   
 
 # Wilcox DE analysis
@@ -1018,6 +1022,8 @@ top_genes_per_cluster <- function (seurat, n_genes_to_plot = 3, object_annotatio
     if (run_pathway_enrichment) {
         # Run pathway enrichment analysis
         Metascape_functional_analysis_cluster_identification(seurat, top25, identities = 'seurat_clusters', path=results_path, object_annotations = object_annotations) 
+        GO_functional_analysis_cluster_identification(seurat, seurat.markers, identities = 'seurat_clusters', path=results_path, object_annotations = object_annotations) 
+
     }
 
     return(list(plot = plot1))
@@ -1070,8 +1076,21 @@ extract_cell_counts <- function(seurat, grouping_var, figures_path, tables_path,
         theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1))
     ggsave(plot = plot2, filename =  paste0(englue('frequency_per_{{grouping_var}}_per_sample '), object_annotations, '.pdf'), width = 12, height = 6, path = figures_path)
     print(plot2)
+
+#     # Tidyplot of proportion of cells in each cluster by sample
+# #     counts <- mutate(
+# #         {{grouping_var}} := fct_reorder({{grouping_var}}frequency_within_sample),
+# #         {{grouping_var}} := fct_rev({{grouping_var}}frequency_within_sample)
+# #   )
+#     plot2 <- tidyplot(counts, x = {{grouping_var}}, y = frequency_within_sample, color = Groups)  |>
+#       add_data_points_beeswarm() |>
+#       add_mean_bar(alpha = 0.4) |>
+#       add_sem_errorbar() |>
+#       add_test_asterisks(test = 't_test', p.adjust.method = 'BH')  |>
+#       save_plot(filename = here(figures_path, paste0(englue('frequency_per_{{grouping_var}}_per_sample_tidyplot '), object_annotations, '.pdf')))
+     
 }
-calculate_D50 <- function (seurat, cell_grouping_var, replicate_var, replicate_group_var = NULL, results_path, figures_path) {
+calculate_D50 <- function (seurat, cell_grouping_var, replicate_var, replicate_group_var = NULL, results_path, figures_path, tables_path) {
 
     #Extracting TCR data for clusters of interest
     Idents(seurat) <- englue("{{cell_grouping_var}}")
@@ -1130,7 +1149,7 @@ calculate_D50 <- function (seurat, cell_grouping_var, replicate_var, replicate_g
     colnames(results) <- paste0(c('All', grouping_var_levels), '_D50')
     results <- results %>% mutate({{replicate_var}} := rnames) |> arrange({{replicate_var}}) |> relocate({{replicate_var}})
 
-    write.csv(results, file = englue("{results_path}/D50_per_{{cell_grouping_var}}.csv"), row.names=FALSE)
+    write.csv(results, file = englue("{tables_path}/D50_per_{{cell_grouping_var}}.csv"), row.names=FALSE)
     print(head(results))
 
     # Convert results to long format for plotting
@@ -1169,3 +1188,187 @@ calculate_D50 <- function (seurat, cell_grouping_var, replicate_var, replicate_g
     ggsave(plot = plot1, filename = paste0(englue('D50_per_{{cell_grouping_var}}.pdf')), width = length(levels(results_long |> pull({{cell_grouping_var}})))+2, height = 6, path = figures_path)
     print(plot1)
 }
+
+run_cnmf_results <- function (
+    seurat,                    # Seurat object
+    data_dir,                  # path to directory containing cNMF run folder (string)
+    runname,                   # cNMF run name (string)
+    k_used = 6,
+    local_density_threshold = 0.1,
+    do_cnmf = TRUE,            # whether to run system cnmf command
+    sequential_palette = NULL, # palette for FeaturePlot_scCustom
+    sequential_palette_dotplot = NULL, # palette for DotPlot_scCustom
+    local_path = here::here('results', 'cNMF', runname),
+    object_annotations = '',
+    top_n = 50,                # top genes per program to extract
+    topn_plot = 6,             # top genes used in dotplot
+    run_metascape = TRUE,       # run Metascape_overrepresentation_analysis
+    ...
+    
+) {
+
+    requireNamespace("dplyr")
+    requireNamespace("tidyr")
+    requireNamespace("tibble")
+    requireNamespace("here")
+    requireNamespace("ggplot2")
+    requireNamespace("Seurat")  
+
+    # 1) optionally run cNMF consensus
+    if (isTRUE(do_cnmf)) {
+        cmd <- paste("cnmf consensus --output-dir", data_dir,
+                                 "--name", runname,
+                                 "--components", k_used,
+                                 "--local-density-threshold", local_density_threshold,
+                                 "--show-clustering", sep = " ")
+        system(cmd)
+    }
+
+    dt_str <- gsub("\\.", "_", as.character(local_density_threshold))
+    # 2) build file paths (match your original filenames)
+    usage_file <- here(data_dir, runname, paste0(runname, ".usages", ".k_", k_used, ".dt_",  dt_str , ".consensus", ".txt"))
+    spectra_score_file <- here(data_dir, runname, paste0(runname, ".gene_spectra_score", ".k_", k_used, ".dt_",  dt_str , ".txt"))
+    spectra_tpm_file <- here(data_dir, runname, paste0(runname, ".gene_spectra_tpm", ".k_", k_used, ".dt_",  dt_str , ".txt"))
+
+    # 3) read tables
+    usage <- utils::read.table(usage_file, sep = "\t", row.names = 1, header = TRUE, check.names = FALSE)
+    spectra_score <- utils::read.table(spectra_score_file, sep = "\t", row.names = 1, header = TRUE, check.names = FALSE)
+    spectra_tpm <- utils::read.table(spectra_tpm_file, sep = "\t", row.names = 1, header = TRUE, check.names = FALSE)                                                
+
+    # 4) normalize usages (per-cell sums to 1)
+    usage_norm <- as.data.frame(t(apply(usage, 1, function(x) x / sum(x))))
+
+    # 5) attach normalized usages to seurat meta.data (preserve existing meta columns except X*)
+    barcodes <- Seurat::Cells(seurat)
+    seurat@meta.data <- seurat@meta.data %>%
+        dplyr::select(-dplyr::starts_with('X')) %>%
+        dplyr::mutate(barcode = barcodes) %>%
+        dplyr::left_join(tibble::rownames_to_column(usage_norm, 'barcode'), by = 'barcode') %>%
+        tibble::column_to_rownames('barcode')
+
+    # 4) normalize usages (per-cell sums to 1)
+    usage_norm <- as.data.frame(t(apply(usage, 1, function(x) x / sum(x))))
+    colnames(usage_norm) <- paste0('cNMF_program_', seq_len(ncol(usage_norm)))
+
+
+    barcodes <- Cells(seurat)
+
+    seurat@meta.data <- seurat@meta.data |>
+        select(-starts_with('cNMF_program_')) |>
+        # select(-barcode) |>
+        mutate(barcode = barcodes) |>
+        left_join(usage_norm |> rownames_to_column('barcode'), by  = 'barcode') |>
+        column_to_rownames('barcode')
+     
+
+    # 5) Feature plot for programs (relies on FeaturePlot_scCustom existing in environment)
+    if (!is.null(sequential_palette)) {
+        p1 <- FeaturePlot_scCustom(seurat, features = colnames(usage_norm), colors_use = sequential_palette, num_columns = 3)
+    } else {
+        p1 <- FeaturePlot_scCustom(seurat, features = colnames(usage_norm), num_columns = 3)
+    }
+    print(p1)
+    ggsave(plot = p1, filename = paste0('FeaturePlot_cNMF_k_', k_used, '_', object_annotations, '.pdf'), path = local_path, width = 15, height = 10)
+
+
+    signature_violin_plot <- function (signature) {
+        plot1 <- VlnPlot(seurat, features = paste0(signature, ''), group.by = 'Groups', pt.size = 0) + labs(title = signature) + NoLegend()
+        print(plot1)
+        ggsave(plot = plot1, filename = paste0('VlnPlot_', k_used, signature, '_by_group_', object_annotations, '.pdf'), path = local_path, width = 5, height = 4)
+    }
+    for (signature in colnames(usage_norm)) {
+        signature_violin_plot(signature) 
+    }
+    
+    #### Interpreting Top genes per gene expression program
+    
+    # 8) top genes per program
+    get_top_colnames <- function(row, n = top_n) {
+        top_indices <- order(row, decreasing = TRUE)[seq_len(min(n, length(row)))]
+        colnames(spectra_score)[top_indices]
+    }
+    top_colnames <- apply(spectra_score, 1, get_top_colnames)
+    top_colnames <- as.data.frame(top_colnames)
+
+    #Add gene annotations:
+    annotations <- read.csv(here("scripts/annotations.csv"))
+    top_colnames_long <- top_colnames |> 
+        pivot_longer(everything(), names_to = 'gene_expression_program', values_to = 'gene')  |>
+        mutate(gene_expression_program = factor(gene_expression_program, levels = colnames(top_colnames))) |>
+        arrange(gene_expression_program) |>
+        left_join(y= unique(annotations[,c('gene_name', 'description')]), by = c('gene' = 'gene_name'))
+    write.table(top_colnames_long,file=here(local_path, paste0('top50_per_gene_program_k_', k_used, ".tsv")), sep="\t",row.names = FALSE)
+
+    # 9) top-n marker dotplot
+    topn <- top_colnames_long %>%
+        dplyr::group_by(gene_expression_program) %>%
+        dplyr::slice_head(n = topn_plot)
+    gene_list_plot <- rev(unique(topn$gene))
+    Seurat::Idents(seurat) <- 'seurat_clusters'
+    if (!is.null(sequential_palette_dotplot)) {
+        p1 <- DotPlot_scCustom(seurat,
+                                         scale = FALSE,
+                                         features = gene_list_plot,
+                                         colors_use = sequential_palette_dotplot,
+                                         flip_axes = TRUE,
+                                         dot.scale = 8,
+                                         dot.min = 0,
+                                         scale.min = 0,
+                                         scale.max = 80,
+                                         x_lab_rotate = TRUE,
+                                         y_lab_rotate = FALSE) +
+            ggplot2::theme(axis.text.x = ggplot2::element_text(size = 14),
+                                         axis.text.y = ggplot2::element_text(size = 14),
+                                         legend.title = ggplot2::element_text(size = 14))
+    } else {
+        p1 <- DotPlot_scCustom(seurat,
+                                         scale = FALSE,
+                                         features = gene_list_plot,
+                                         flip_axes = TRUE,
+                                         dot.scale = 8,
+                                         dot.min = 0,
+                                         scale.min = 0,
+                                         scale.max = 80,
+                                         x_lab_rotate = TRUE,
+                                         y_lab_rotate = FALSE) +
+            ggplot2::theme(axis.text.x = ggplot2::element_text(size = 14),
+                                         axis.text.y = ggplot2::element_text(size = 14),
+                                         legend.title = ggplot2::element_text(size = 14))
+    }
+    print(p1)
+
+    # 10) Metascape overrepresentation analysis per program
+    if (isTRUE(run_metascape)) {
+        local_path_metascape <- here(local_path, paste0('pathway_enrichment_k_', k_used))
+        local_path_GO <- here(local_path, paste0('GO_enrichment_k_', k_used))
+        dir.create(local_path_metascape, recursive = TRUE, showWarnings = FALSE)
+        dir.create(local_path_GO, recursive = TRUE, showWarnings = FALSE)
+        for (gene_expression_program in colnames(top_colnames)) {
+            local_path_metascape_2 <- here(local_path_metascape, gene_expression_program)
+            dir.create(local_path_metascape_2, recursive = TRUE, showWarnings = FALSE)
+            Metascape_overrepresentation_analysis(top_colnames %>% dplyr::pull(gene_expression_program),
+                                                                                        path = local_path_metascape_2,
+                                                                                        group = 'cNMF',
+                                                                                        grouping_var = gene_expression_program,
+                                                                                        filename = paste0(gene_expression_program, '_'))
+            local_path_GO_2 <- here(local_path_GO, gene_expression_program)
+            dir.create(local_path_GO_2, recursive = TRUE, showWarnings = FALSE)                                                                                        
+            all_genes <- Features(seurat[['RNA']]) |>unique()
+            GO_overrepresentation_analysis(top_colnames %>% dplyr::pull(gene_expression_program),
+                                                                                        all_genes,
+                                                                                        local_path = local_path_GO_2,
+                                                                                        ontology = 'ALL',
+                                                                                        group = gene_expression_program,
+                                                                                        filename = paste0(gene_expression_program, '_'), ...)
+                                                                                    
+        }
+    }
+
+    return(list(top_colnames_long = top_colnames_long, top_colnames=top_colnames))
+}
+
+
+
+
+
+

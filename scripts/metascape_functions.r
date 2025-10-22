@@ -19,7 +19,8 @@ Metascape_overrepresentation_analysis <- function (significant_genes_FC_ordered,
     writeLines(significant_genes_FC_ordered, msbio_file)
 
     # Run bash command
-    bash_command <- paste0("cd ~/msbio_v3-2/; ls; bin/ms.sh -up -o", msbio_path_short, " ", msbio_file_path_short)
+    bash_command <- paste0("cd ~/msbio_v3-2/; ls; bin/ms.sh -up -t Symbol --source_tax_id 9606 --target_tax_id 9606 -o ", msbio_path_short, " ", msbio_file_path_short)
+    print(bash_command)
     system(bash_command)
     
     # Copy output back to current working directory
@@ -54,7 +55,7 @@ Metascape_overrepresentation_analysis <- function (significant_genes_FC_ordered,
           theme_minimal() +
           theme(axis.text.y = element_text(size = 9), title = element_text(size = 16), plot.title.position = 'plot', legend.position = 'none', axis.text.x = element_text(size = 12))
         print(plot2)
-         ggsave(plot = plot2, filename = paste0(filename, 'Pathway_enrichment_analysis_metascape', '.pdf'), width = 12, height = 6, path = local_path)
+         ggsave(plot = plot2, filename = paste0(filename, '_Pathway_enrichment_analysis_metascape', '.pdf'), width = 12, height = 6, path = local_path)
   
 }
 
@@ -105,6 +106,9 @@ Metascape_functional_analysis_cluster_identification <- function (seurat, result
 for (cluster in levels(seurat@meta.data |> pull(!!as.name(identities)))) {
 
      name <- paste0('Cluster_', cluster)
+     local_path_cluster <- here(local_path, name)
+     unlink(local_path_cluster, recursive = T)
+     dir.create(local_path_cluster)
 
      significant_results_cluster <- results |> 
           filter(cluster == {{cluster}}) |>
@@ -112,7 +116,7 @@ for (cluster in levels(seurat@meta.data |> pull(!!as.name(identities)))) {
           unique()
      
 
-  Metascape_overrepresentation_analysis(significant_genes_FC_ordered = significant_results_cluster, path = local_path, group = '', filename =  name,  grouping_var = cluster) 
+  Metascape_overrepresentation_analysis(significant_genes_FC_ordered = significant_results_cluster, path = local_path_cluster, group = '', filename =  name,  grouping_var = cluster) 
 
   }
 }
