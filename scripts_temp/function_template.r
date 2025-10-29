@@ -1,5 +1,5 @@
-   #Visualization Functions
-scatterplot <- function (results, group1, group2, local_figures_path, FC_threshold, p_value_threshold, cluster = 'all_clusters', my_colors = c('green4', 'darkorchid4', 'gray'), max_overlaps = 15, label_size = 5, label_threshold = 10000, distance_from_diagonal_threshold = 0.5, test_type = c('Wilcox', 'Pseudobulk', 'Bulk'), genes_to_plot = NULL, pt_size = 1.3, ...) {    
+    #Visualization Functions
+scatterplot <- function (results, group1, group2, local_figures_path, FC_threshold, p_value_threshold, cluster = 'all_clusters', my_colors = c('green4', 'darkorchid4', 'gray'), max_overlaps = 15, label_size = 5, label_threshold = 10000, distance_from_diagonal_threshold = 0.5, test_type = c('Wilcox', 'Pseudobulk', 'Bulk'), genes_to_plot = NULL, ...) {    
 
     # Set colors for the plot
     names(my_colors) <- c("DOWN", "UP", "NO")
@@ -72,7 +72,8 @@ scatterplot <- function (results, group1, group2, local_figures_path, FC_thresho
        
     scatter_plot <- results_scatter |> 
         ggplot(aes(x = !!sym(paste0('Avg_', group1)), y = !!sym(paste0('Avg_', group2)), col = diffexpressed))+
-            geom_point(size=pt_size, stroke = 0) +
+            geom_point(size=1.3
+            ) +
             geom_abline(slope = 1, intercept = 0)+
             geom_text_repel(
                 size=label_size,
@@ -122,7 +123,7 @@ scatterplot <- function (results, group1, group2, local_figures_path, FC_thresho
     return(scatter_plot)    
 }
 
-volcano_plot <- function (results, group1, group2, cluster, local_figures_path, FC_threshold, p_value_threshold, max_overlaps = 15, label_size = 5, my_colors = c('green4', 'darkorchid4', 'gray'), test_type = c('Wilcox', 'Pseudobulk', 'Bulk'), genes_to_plot = NULL, pt_size = 1.5, ...) {
+volcano_plot <- function (results, group1, group2, cluster, local_figures_path, FC_threshold, p_value_threshold, max_overlaps = 15, label_size = 5, my_colors = c('green4', 'darkorchid4', 'gray'), test_type = c('Wilcox', 'Pseudobulk', 'Bulk'), genes_to_plot = NULL, ...) {
     #Determine test type
     if (test_type == 'Pseudobulk') {
         axis_test <- 'Average Normalized Counts'
@@ -202,7 +203,7 @@ volcano_plot <- function (results, group1, group2, cluster, local_figures_path, 
     volcano_plot <- results_volcano |> 
         arrange(desc(padj)) |>
         ggplot(aes(x=log2FoldChange, y=log10_pval,  col=diffexpressed)) +
-        geom_point(size=pt_size, stroke = 0) +
+        geom_point(size=1.5) +
         geom_text_repel(
             size=label_size,
             box.padding = 0.35,
@@ -245,14 +246,53 @@ volcano_plot <- function (results, group1, group2, cluster, local_figures_path, 
 }
 
 
-    
-# Core pseudobulk differential expression analysis
-pseudobulk_de <- function(scRNAseq, comparison, group1, group2, cluster = 'all_clusters', 
-                          path = './', FC_threshold = 0.3, p_value_threshold = 0.05, 
-                          expression_threshold_for_gene_list = 20, minimum_cell_number = 10, 
-                          genes_to_exclude = c(), ...) {
-    
-    requireNamespace('DESeq2', quietly = TRUE) || stop('DESeq2 package needed for this function to work. Please install it.', call. = FALSE)
+
+#' Core Pseudobulk Differential Expression Analysis
+#'
+#' Performs DESeq2-based differential expression analysis on pseudobulked single-cell data
+#'
+#' @param scRNAseq Seurat object containing single-cell RNA-seq data
+#' @param comparison Metadata column name to use for comparison
+#' @param group1 Name of first group (control/reference)
+#' @param group2 Name of second group (treatment/test)
+#' @param cluster Cluster name for output files (default: 'all_clusters')
+#' @param path Base path for saving results (default: './')
+#' @param FC_threshold Log2 fold change threshold for significance (default: 0.3)
+#' @param p_value_threshold Adjusted p-value threshold (default: 0.05)
+#' @param expression_threshold_for_gene_list Minimum expression for gene list filtering (default: 20)
+#' @param minimum_cell_number Minimum cells required per group (default: 10)
+#' @param genes_to_exclude Genes to exclude from analysis (default: c())
+#' @param annotations_file Path to gene annotations CSV file (default: 'scripts/annotations.csv')
+#' @param ... Additional arguments
+#'
+#' @return List containing:
+#'   \item{all_count}{Number of significant DEGs}
+#'   \item{UP_count}{Number of upregulated genes}
+#'   \item{DOWN_count}{Number of downregulated genes}
+#'   \item{results}{Full results data frame}
+#' @export
+pseudobulk_de <- function(scRNAseq, comparison, group1, group2, cluster = 'all_clusters',
+                          path = './', FC_threshold = 0.3, p_value_threshold = 0.05,
+                          expression_threshold_for_gene_list = 20, minimum_cell_number = 10,
+                          genes_to_exclude = c(), annotations_file = 'scripts/annotations.csv', ...) {
+
+    # Input validation
+    if (!requireNamespace('DESeq2', quietly = TRUE)) {
+        stop('DESeq2 package needed for this function to work. Please install it using: BiocManager::install("DESeq2")', call. = FALSE)
+    }
+
+    if (!inherits(scRNAseq, "Seurat")) {
+        stop("scRNAseq must be a Seurat object", call. = FALSE)
+    }
+
+    if (!comparison %in% colnames(scRNAseq@meta.data)) {
+        stop("comparison '", comparison, "' not found in Seurat object metadata. Available columns: ",
+             paste(colnames(scRNAseq@meta.data), collapse = ", "), call. = FALSE)
+    }
+
+    stopifnot("FC_threshold must be positive" = FC_threshold > 0)
+    stopifnot("p_value_threshold must be between 0 and 1" = p_value_threshold > 0 && p_value_threshold < 1)
+    stopifnot("minimum_cell_number must be positive" = minimum_cell_number > 0)
     
     # Subset seurat object
     scRNAseq <- subset(scRNAseq, subset = (str_detect(!!as.name(comparison), group1) | str_detect(!!as.name(comparison), group2)))
@@ -364,12 +404,19 @@ pseudobulk_de <- function(scRNAseq, comparison, group1, group2, cluster = 'all_c
         ungroup()
     
     # Add gene annotations
-    annotations <- read.csv(here('scripts', 'annotations.csv'))
-    results <- results |>
-        rownames_to_column('genes') |>
-        left_join(y = unique(annotations[, c('gene_name', 'description')]),
-                 by = c('genes' = 'gene_name')) |>
-        left_join(y = normalized_counts, by = c('genes' = 'genes'))
+    if (file.exists(here(annotations_file))) {
+        annotations <- read.csv(here(annotations_file))
+        results <- results |>
+            rownames_to_column('genes') |>
+            left_join(y = unique(annotations[, c('gene_name', 'description')]),
+                     by = c('genes' = 'gene_name')) |>
+            left_join(y = normalized_counts, by = c('genes' = 'genes'))
+    } else {
+        warning("Annotations file not found at: ", annotations_file, ". Proceeding without gene annotations.")
+        results <- results |>
+            rownames_to_column('genes') |>
+            left_join(y = normalized_counts, by = c('genes' = 'genes'))
+    }
     
     # Filter results
     results_filtered <- filter(
@@ -956,7 +1003,7 @@ annotate_seurat_with_SingleR_Eduard <- function(
 
 # Find and save top marker genes per cluster in a Seurat object
 
-top_genes_per_cluster <- function (seurat, n_genes_to_plot = 3, object_annotations = '', tables_path = 'results/tables/', figures_path = 'results/figures/', results_path = 'results/', run_pathway_enrichment = NULL, ...) {
+top_genes_per_cluster <- function (seurat, n_genes_to_plot = 3, object_annotations = '', tables_path = 'results/tables/', figures_path = 'results/figures/', results_path = 'results/', run_pathway_enrichment = NULL) {
     # Function to find top genes per cluster in a Seurat object and save results
     # Args:
     #   seurat: Seurat object
@@ -979,8 +1026,7 @@ top_genes_per_cluster <- function (seurat, n_genes_to_plot = 3, object_annotatio
     annotations <- read.csv(here("scripts/annotations.csv"))
     seurat.markers <- seurat.markers |>
                     left_join(y= unique(annotations[,c('gene_name', 'description')]),
-                        by = c('gene' = 'gene_name')) |>
-                            mutate(cluster = fct_inseq(cluster))
+                        by = c('gene' = 'gene_name'))
 
     #Top10 markers
     seurat.markers %>%
@@ -992,7 +1038,7 @@ top_genes_per_cluster <- function (seurat, n_genes_to_plot = 3, object_annotatio
     seurat.markers %>%
         group_by(cluster) %>%
         arrange(desc(avg_log2FC)) |>
-        slice_head(n = 50) -> top50
+        slice_head(n = 25) -> top25
 
     #Top100 markers
     seurat.markers %>%
@@ -1036,20 +1082,20 @@ top_genes_per_cluster <- function (seurat, n_genes_to_plot = 3, object_annotatio
             axis.text.y = element_text(size = 14),
             legend.title = element_text(size = 18))
     
-    metascape_results <- NULL
-    ClusterProfiler_results <- NULL
+    
         # Run pathway enrichment analysis
     if (!is.null(run_pathway_enrichment)) {
         if ('Metascape' %in% run_pathway_enrichment) {
-            metascape_results <- Metascape_functional_analysis_cluster_identification(seurat, top100, identities = 'seurat_clusters', path=results_path, object_annotations = object_annotations)                        
+            Metascape_functional_analysis_cluster_identification(seurat, top25, identities = 'seurat_clusters', path=results_path, object_annotations = object_annotations)            
         }
         if ('ClusterProfiler' %in% run_pathway_enrichment) {
-            ClusterProfiler_results <- GO_functional_analysis_cluster_identification(seurat, seurat.markers, path=results_path, object_annotations = object_annotations, top_gene_number = 100, ...)             
+            GO_functional_analysis_cluster_identification(seurat, seurat.markers, identities = 'seurat_clusters', path=results_path, object_annotations = object_annotations) 
+            
         }
 
     }
 
-    return(list(plot = plot1, ClusterProfiler_results = ClusterProfiler_results, metascape_results = metascape_results, topn = topn, top100 = top100) )
+    return(list(plot = plot1))
 
 }
 
@@ -1223,10 +1269,11 @@ run_cnmf_results <- function (
     sequential_palette_dotplot = NULL, # palette for DotPlot_scCustom
     local_path = here::here('results', 'cNMF', runname),
     object_annotations = '',
-    top_n = 100,                # top genes per program to extract
+    top_n = 50,                # top genes per program to extract
     topn_plot = 6,             # top genes used in dotplot
     run_pathway_enrichment = pathway_enrichment,       # run Metascape_overrepresentation_analysis
     ...
+    
 ) {
 
     requireNamespace("dplyr")
@@ -1295,14 +1342,13 @@ run_cnmf_results <- function (
 
     signature_violin_plot <- function (signature) {
         plot1 <- VlnPlot(seurat, features = paste0(signature, ''), group.by = 'Groups', pt.size = 0) + labs(title = signature) + NoLegend()
-        # print(plot1)
+        print(plot1)
         ggsave(plot = plot1, filename = paste0('VlnPlot_', k_used, signature, '_by_group_', object_annotations, '.pdf'), path = local_path, width = 5, height = 4)
-        return(plot1)
     }
-    plot_list <- map(colnames(usage_norm), signature_violin_plot)
-    plots <- wrap_plots(plot_list)
-    print(plots)
-
+    for (signature in colnames(usage_norm)) {
+        signature_violin_plot(signature) 
+    }
+    
     #### Interpreting Top genes per gene expression program
     
     # 8) top genes per program
@@ -1312,7 +1358,6 @@ run_cnmf_results <- function (
     }
     top_colnames <- apply(spectra_score, 1, get_top_colnames)
     top_colnames <- as.data.frame(top_colnames)
-
 
     #Add gene annotations:
     annotations <- read.csv(here("scripts/annotations.csv"))
@@ -1361,58 +1406,30 @@ run_cnmf_results <- function (
     }
     print(p1)
 
-    # 8.2) Extracting the top genes driving 90% of each program
-
-    # genes_score_file <- here('results/cNMF/cNMF_run/cNMF_run.starcat_spectra.k_15.dt_0_1.txt')
-    # genes_score <- utils::read.table(spectra_score_file, sep = "\t", row.names = 1, header = TRUE, check.names = FALSE)
-    # genes_score |> as.matrix() |> t() |> as.data.frame() -> genes_score
-    # genes_score |> rownames_to_column('gene')  |> pivot_longer(-gene, names_to = 'GEP', values_to = 'loading' )  |>
-    # group_by(GEP) |>
-    # arrange(desc(loading)) |>
-    # mutate(cumsum = cumsum(loading),
-    #     total = sum(loading)) |>
-    # filter(cumsum <= total * 0.9) |> 
-    #  ungroup() |>
-    # select(GEP, gene) |>
-    # pivot_wider(names_from = GEP, values_from = gene) -> top_genes_90_percent_per_program
-    # print(head(top_genes_90_percent_per_program))
-
-    # 10)  overrepresentation analysis per program
+    # 10) Metascape overrepresentation analysis per program
         local_path_pathway_enrichment <- here(local_path, paste0('pathway_enrichment_k_', k_used))
         dir.create(local_path_pathway_enrichment, recursive = TRUE, showWarnings = FALSE)
-        # Run pathway enrichment analysis
-    if (!is.null(run_pathway_enrichment)) {
-        if ('Metascape' %in% run_pathway_enrichment) {
-            plot_list <- list()
-            for (gene_expression_program in colnames(top_colnames)) {
-                local_path_2 <- here(local_path_pathway_enrichment, gene_expression_program)
-                dir.create(local_path_2, recursive = TRUE, showWarnings = FALSE)
-                plot_list[[gene_expression_program]] <- Metascape_overrepresentation_analysis(top_colnames %>% dplyr::pull(gene_expression_program),
-                            local_path = local_path_2,
-                            group = gene_expression_program,
-                            filename = paste0(gene_expression_program, '_'),
-                            grouping_var = 'GEP',
-                            nterms_to_plot_metascape = 20, ...)
-                }
-            }
-        plots <- wrap_plots(plot_list) &
-            theme(plot.title = element_text(size = 9, hjust = 0.5),
-                axis.text.y = element_text(size = 6),
-                axis.text.x = element_text(size = 6),
-                axis.title.x  = element_text(size = 7),
-            axis.title.y  = element_text(size = 7))
-        print(plots)        
-            
-        if ('ClusterProfiler' %in% run_pathway_enrichment) {
+        for (gene_expression_program in colnames(top_colnames)) {
+            local_path_2 <- here(local_path_pathway_enrichment, gene_expression_program)
+            dir.create(local_path_2, recursive = TRUE, showWarnings = FALSE)
             all_genes <- Features(seurat[['RNA']]) |>unique()
-            gene_list <- top_colnames |> as.list() |>  map(~ .x[!is.na(.x)])
-            over_representation_results <- GO_overrepresentation_analysis_multiple_lists(gene_list, all_genes, local_path_pathway_enrichment, ontology = 'ALL', minGSSize = 5, maxGSSize = 400, filename = '',  drop_levels = F, levels_to_drop = c(), simplify_function = min, simplify_by = 'p.adjust', simplify_terms = F, run_network = F, network_n_terms = 100, nterms_to_plot = 5, font_size = 8, ...)  
-  
-                                                                            
+            run_overrepresentation_analysis(top_colnames %>% dplyr::pull(gene_expression_program),
+                                                                                        all_genes = all_genes,
+                                                                                        method = pathway_enrichment,
+                                                                                        local_path = local_path_2,
+                                                                                        ontology = 'ALL',
+                                                                                        grouping_var = 'cNMF',
+                                                                                        group = gene_expression_program,
+                                                                                        filename = paste0(gene_expression_program, '_'), 
+                                                                                        nterms_to_plot = 20,
+                                                                                        ...)
+                                                                                    
+        
+    }
 
-    return(list(seurat = seurat, top_colnames_long = top_colnames_long, top_colnames=top_colnames,ORA_results = over_representation_results) )
+    return(list(top_colnames_long = top_colnames_long, top_colnames=top_colnames))
 }
-    }}
+
 
 
 # Dispatcher wrappers for pathway analyses (supports 1..3 methods)
@@ -1484,9 +1501,8 @@ run_overrepresentation_analysis <- function(genes,
 
 
 # Heatmap plotting function for pathway genes
-plot_pathways_heatmap <- function(genes_to_plot, seurat, pathway_name, color_palette = diverging_palette_2, grouping_var = 'Samples') {
-        
-    Aggregated_expression <- AggregateExpression(seurat, group.by = grouping_var, return.seurat = T)
+plot_pathways_heatmap <- function(genes_to_plot, seurat, pathway_name, color_palette = diverging_palette_2) {
+    Aggregated_expression <- AggregateExpression(seurat |> subset(subset = Groups != 'CT'), group.by = 'Samples', return.seurat = T)
     data_to_plot <- Aggregated_expression[['RNA']]$data |> 
         as.data.frame() |> 
         rownames_to_column('gene') |> 
@@ -1494,12 +1510,10 @@ plot_pathways_heatmap <- function(genes_to_plot, seurat, pathway_name, color_pal
         filter(gene %in% genes_to_plot) |>
         mutate(gene = factor(gene, levels = genes_to_plot)) |>
         pivot_longer(cols = -gene, names_to = 'Sample', values_to = 'expression') |>
-        mutate(Sample = factor(Sample, levels = colnames(Aggregated_expression[['RNA']]))) |>
         group_by(gene) |>
         mutate(scaled_expression = scale(expression)[,1]) |>
         ungroup() |>
         mutate(Sample = fct_rev(factor(Sample)))
-    head(data_to_plot) |> print()
 
     # Calculate symmetric limits for the color scale
     max_abs <- max(abs(data_to_plot$scaled_expression), na.rm = TRUE)
@@ -1512,47 +1526,7 @@ plot_pathways_heatmap <- function(genes_to_plot, seurat, pathway_name, color_pal
             limits = c(-max_abs, max_abs)
         ) +
         theme_minimal() +
-        theme(
-            axis.text.x = element_text(angle = 45, hjust = 1),
-            plot.title = element_text(hjust = 0.5, size = 14)
-        ) +
-        labs(x = NULL, y = NULL, title = pathway_name)
-    
-    return(plot)
-}
-
-plot_pathways_heatmap2 <- function(genes_to_plot, seurat, pathway_name, color_palette = diverging_palette_2, grouping_var = 'Samples') {
-        
-    Aggregated_expression <- AggregateExpression(seurat, group.by = grouping_var, return.seurat = T)
-    data_to_plot <- Aggregated_expression[['RNA']]$data |> 
-        as.data.frame() |> 
-        rownames_to_column('gene') |> 
-        as_tibble() |> 
-        filter(gene %in% genes_to_plot) |>
-        mutate(gene = factor(gene, levels = genes_to_plot)) |>
-        pivot_longer(cols = -gene, names_to = 'Sample', values_to = 'expression') |>
-        mutate(Sample = factor(Sample, levels = colnames(Aggregated_expression[['RNA']]))) |>
-        group_by(gene) |>
-        mutate(scaled_expression = scale(expression)[,1]) |>
-        ungroup() |>
-        mutate(Sample = fct_rev(factor(Sample)))
-    
-
-    # Calculate symmetric limits for the color scale
-    max_abs <- max(abs(data_to_plot$scaled_expression), na.rm = TRUE)
-
-    plot <- ggplot(data_to_plot, aes(x = Sample, y = gene, fill = scaled_expression)) +
-        geom_tile(color = "grey60", linewidth = 0.3) +
-        scale_fill_gradientn(
-            colors = color_palette, 
-            name = "z-scored\nexpression",
-            limits = c(-max_abs, max_abs)
-        ) +
-        theme_minimal() +
-        theme(
-            axis.text.x = element_text(angle = 45, hjust = 1),
-            plot.title = element_text(hjust = 0.5, size = 14)
-        ) +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
         labs(x = NULL, y = NULL, title = pathway_name)
     
     return(plot)

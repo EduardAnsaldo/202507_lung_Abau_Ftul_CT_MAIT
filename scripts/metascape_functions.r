@@ -1,16 +1,15 @@
-### Over representation analysis -- Metascape
-Metascape_overrepresentation_analysis <- function (significant_genes_FC_ordered, path, group, grouping_var,  filename = '') {
+ ### Over representation analysis -- Metascape
+Metascape_overrepresentation_analysis <- function (significant_genes_FC_ordered, local_path, group, grouping_var, nterms_to_plot_metascape = 12 , filename = '', ...) {
 
 #     # Create local folder
-#     local_path <- here(path, 'Metascape_overrepresentation_analysis')
-#     unlink(path, recursive = T)
+#     local_path <- here(local_path, 'Metascape_overrepresentation_analysis')
+#     unlink(local_path, recursive = T)
 #     dir.create(local_path, recursive = T, showWarnings = F)
-     local_path <- path
     
     # Create folder in msbio_v3-2
     project_name <- here() |> basename()
-    msbio_path <- paste0('~/msbio_v3-2/', 'data/', project_name, '/', basename(path))
-    msbio_path_short <- paste0('data/', project_name, '/', basename(path))
+    msbio_path <- paste0('~/msbio_v3-2/', 'data/', project_name, '/', basename(local_path))
+    msbio_path_short <- paste0('data/', project_name, '/', basename(local_path))
     dir.create(msbio_path, recursive = T)
     msbio_file <- paste0(msbio_path, '/', filename, '_', grouping_var, '_UP_in_', group, '_gene_list.txt')
     msbio_file_path_short <- paste0(msbio_path_short, '/', filename, '_', grouping_var, '_UP_in_', group, '_gene_list.txt')
@@ -20,7 +19,7 @@ Metascape_overrepresentation_analysis <- function (significant_genes_FC_ordered,
 
     # Run bash command
     bash_command <- paste0("cd ~/msbio_v3-2/; ls; bin/ms.sh -up -t Symbol --source_tax_id 9606 --target_tax_id 9606 -o ", msbio_path_short, " ", msbio_file_path_short)
-    print(bash_command)
+#     print(bash_command)
     system(bash_command)
     
     # Copy output back to current working directory
@@ -30,8 +29,8 @@ Metascape_overrepresentation_analysis <- function (significant_genes_FC_ordered,
 
    if (!file.exists(here(local_path, 'metascape_result.xlsx'))) {
      p1 <- ggplot()+theme_void()+ geom_text(aes(0,0,label='N/A')) + theme(text = element_text(size = 24)) + xlab(NULL)
-          print(p1)
-     return()
+          # print(p1)
+     return(p1)
    }       
      
   # Read results
@@ -44,8 +43,9 @@ Metascape_overrepresentation_analysis <- function (significant_genes_FC_ordered,
       select(Description, LogP) |>
       rename(term = Description, log_q_value = LogP)  |>
       mutate(log_q_value = -1*log_q_value) |> 
+
       # rename(term = Description, log_q_value = LogP)  |>
-      head(n = 20)
+      head(n = nterms_to_plot_metascape)
 
     plot2 <- enrichment_results |>       
         ggplot(aes(x = log_q_value, y = fct_reorder(term, log_q_value , .desc = F), fill = log_q_value)) +
@@ -53,14 +53,16 @@ Metascape_overrepresentation_analysis <- function (significant_genes_FC_ordered,
           scale_fill_binned(palette = hcl.colors(n = 6, 'YlOrRd', rev = T), breaks = c(2, 4, 6, 10, 20)) +
           labs(x = '-log10(p-value)', y = '', title = paste0('UP in ', group, ' - ', grouping_var)) +
           theme_minimal() +
-          theme(axis.text.y = element_text(size = 9), title = element_text(size = 16), plot.title.position = 'plot', legend.position = 'none', axis.text.x = element_text(size = 12))
-        print(plot2)
+          scale_y_discrete(labels = label_wrap(22))+
+          theme(axis.text.y = element_text(size = 9), title = element_text(size = 16), plot.title.position = 'plot', legend.position = 'none', axis.text.x = element_text(size = 10))
+     #    print(plot2)
          ggsave(plot = plot2, filename = paste0(filename, '_Pathway_enrichment_analysis_metascape', '.pdf'), width = 12, height = 6, path = local_path)
+     return(plot2)
   
 }
 
 
-Metascape_functional_analysis <- function (results, grouping_var, group2, group1, path='./', FC_threshold, p_value_threshold = 0.05) {
+Metascape_functional_analysis <- function (results, grouping_var, group2, group1, path='./', FC_threshold, p_value_threshold = 0.05, ...) {
 
      results <- results[which(duplicated(results$genes) == F),]
 
@@ -73,7 +75,8 @@ Metascape_functional_analysis <- function (results, grouping_var, group2, group1
      significant_genes <- results |> filter((padj < p_value_threshold) & (log2FoldChange > FC_threshold)) |> arrange(padj) |> arrange(desc(log2FoldChange)) |> pull(genes)
      
      if (length(significant_genes) > 2) {
-          Metascape_overrepresentation_analysis(significant_genes, path =  local_path , group = group2, grouping_var = grouping_var, filename = '')
+          p1 <- Metascape_overrepresentation_analysis(significant_genes, local_path =  local_path , group = group2, grouping_var = grouping_var, filename = '', ...)
+          print(p1)
 
      }else {
           p1 <- ggplot()+theme_void()+ geom_text(aes(0,0,label='N/A')) + theme(text = element_text(size = 24)) + xlab(NULL)
@@ -89,7 +92,8 @@ Metascape_functional_analysis <- function (results, grouping_var, group2, group1
      significant_genes <- results |> filter((padj < p_value_threshold) & (log2FoldChange < -1*FC_threshold)) |> arrange(padj) |> arrange(log2FoldChange) |> pull(genes)
 
      if (length(significant_genes) > 2) {
-          Metascape_overrepresentation_analysis(significant_genes, path = local_path , group = group1, grouping_var = grouping_var, filename = '')
+          p1 <- Metascape_overrepresentation_analysis(significant_genes, local_path = local_path , group = group1, grouping_var = grouping_var, filename = '', ...)
+          print(p1)
      }
      else {
           p1 <- ggplot()+theme_void()+ geom_text(aes(0,0,label='N/A')) + theme(text = element_text(size = 24)) + xlab(NULL)
@@ -97,26 +101,39 @@ Metascape_functional_analysis <- function (results, grouping_var, group2, group1
      }
 }
 
-Metascape_functional_analysis_cluster_identification <- function (seurat, results, identities = 'seurat_clusters', path='./', object_annotations = '') {
+
+
+Metascape_functional_analysis_cluster_identification <- function (seurat, results, identities = 'seurat_clusters', path='./', object_annotations = '', ...) {
 
      local_path <- here(path, paste0(object_annotations, '_Cluster_identification_functional_analysis'))
      unlink(local_path, recursive = T)
      dir.create(local_path)
+     results <- results |> 
+          mutate(cluster = fct_inseq(cluster))
 
-for (cluster in levels(seurat@meta.data |> pull(!!as.name(identities)))) {
+     plot_list <- list()
+     for (cluster in levels(results$cluster)) {
 
-     name <- paste0('Cluster_', cluster)
-     local_path_cluster <- here(local_path, name)
-     unlink(local_path_cluster, recursive = T)
-     dir.create(local_path_cluster)
+          name <- paste0('Cluster_', cluster)
+          local_path_cluster <- here(local_path, name)
+          unlink(local_path_cluster, recursive = T)
+          dir.create(local_path_cluster)
 
-     significant_results_cluster <- results |> 
-          filter(cluster == {{cluster}}) |>
-          pull(gene) |>
-          unique()
+          significant_results_cluster <- results |> 
+               filter(cluster == {{cluster}}) |>
+               pull(gene) |>
+               unique()
      
 
-  Metascape_overrepresentation_analysis(significant_genes_FC_ordered = significant_results_cluster, path = local_path_cluster, group = '', filename =  name,  grouping_var = cluster) 
+plot_list[[cluster]] <- Metascape_overrepresentation_analysis(significant_genes_FC_ordered = significant_results_cluster, local_path = local_path_cluster, nterms_to_plot_metascape = 6, group = '', filename =  name,  grouping_var = cluster) 
 
   }
+  plots <- wrap_plots(plot_list) + plot_annotation(title = 'Cluster identification - Metascape functional analysis') & 
+    theme(plot.title = element_text(size = 9, hjust = 0.5),
+          axis.text.y = element_text(size = 8),
+          axis.text.x = element_text(size = 8),
+          axis.title.x  = element_text(size = 8),
+     axis.title.y  = element_text(size = 8))
+  print(plots)
+  return(plots)
 }

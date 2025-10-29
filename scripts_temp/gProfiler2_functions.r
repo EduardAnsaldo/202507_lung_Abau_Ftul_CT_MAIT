@@ -1,16 +1,42 @@
 ### Over representation analysis -- gProfiler2
-gProfiler2_overrepresentation_analysis <- function (significant_genes_FC_ordered, local_path, group, cluster,  filename = '', p_value_threshold = 0.05, highlighted_terms = F) {
-     
+
+#' gProfiler2 Overrepresentation Analysis
+#'
+#' Performs pathway enrichment analysis using gProfiler2
+#'
+#' @param significant_genes_FC_ordered Character vector of significant gene symbols
+#' @param local_path Path to save output files
+#' @param group Group name for plot titles
+#' @param cluster Cluster name for output files
+#' @param filename Prefix for output files (default: '')
+#' @param p_value_threshold P-value threshold for significance (default: 0.05)
+#' @param highlighted_terms Custom highlighted terms (default: FALSE - highlight all significant)
+#' @param organism Organism name for gProfiler2 (default: 'mmusculus')
+#'
+#' @return Invisibly returns NULL (results are saved to files)
+#' @export
+gProfiler2_overrepresentation_analysis <- function (significant_genes_FC_ordered, local_path, group, cluster,  filename = '', p_value_threshold = 0.05, highlighted_terms = FALSE, organism = 'mmusculus') {
+
+    # Input validation
+    stopifnot("significant_genes_FC_ordered must be a character vector" = is.character(significant_genes_FC_ordered))
+    stopifnot("significant_genes_FC_ordered cannot be empty" = length(significant_genes_FC_ordered) > 0)
+    stopifnot("p_value_threshold must be between 0 and 1" = p_value_threshold > 0 && p_value_threshold < 1)
+    stopifnot("organism must be a character string" = is.character(organism) && length(organism) == 1)
+
     significant_genes_FC_ordered <- list(significant_genes_FC_ordered)
     names(significant_genes_FC_ordered) <- paste0('UP in ', group, ' - ', cluster)
-    enrichment_results <- gost(query = significant_genes_FC_ordered, 
-                    organism = "mmusculus", ordered_query = FALSE, 
+    enrichment_results <- tryCatch({
+        gost(query = significant_genes_FC_ordered,
+                    organism = organism, ordered_query = FALSE,
                     sources = c('GO:BP','GO:MF','GO:CC','KEGG','REAC','TF'),
-                    multi_query = FALSE, significant = TRUE, exclude_iea = FALSE, 
-                    measure_underrepresentation = FALSE, evcodes = FALSE, 
-                    user_threshold = p_value_threshold, correction_method = "g_SCS", 
-                    domain_scope = "annotated", custom_bg = NULL, 
+                    multi_query = FALSE, significant = TRUE, exclude_iea = FALSE,
+                    measure_underrepresentation = FALSE, evcodes = FALSE,
+                    user_threshold = p_value_threshold, correction_method = "g_SCS",
+                    domain_scope = "annotated", custom_bg = NULL,
                     numeric_ns = "", as_short_link = FALSE, highlight = highlighted_terms)
+    }, error = function(e) {
+        stop("gProfiler2 gost failed: ", e$message, "\nCheck that gene symbols are valid for organism: ", organism)
+    })
      
 
     if (!(is.null(enrichment_results[['result']]) )) {

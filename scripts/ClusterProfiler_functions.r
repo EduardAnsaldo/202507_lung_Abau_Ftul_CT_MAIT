@@ -1,6 +1,6 @@
 ## Functions
 ### Overrepresentation analysis function GO and MSigDB -- ClusterProfiler
-GO_overrepresentation_analysis <- function (significant_genes, all_genes, local_path, ontology = 'ALL', minGSSize = 5, maxGSSize = 500, filename = '', group = '', drop_levels = F, levels_to_drop = c()) {
+GO_overrepresentation_analysis <- function (significant_genes, all_genes, local_path, ontology = 'ALL', minGSSize = 5, maxGSSize = 400, filename = '', group = '', drop_levels = F, levels_to_drop = c(), simplify_function = min, simplify_by = 'p.adjust', simplify_terms = T, run_network = F, network_n_terms = 100, nterms_to_plot = 50, font_size = 8,  ...)  {
 
      color_scale <- viridis(n = 4, direction = -1)
      options(enrichplot.colours = color_scale)
@@ -19,24 +19,37 @@ GO_overrepresentation_analysis <- function (significant_genes, all_genes, local_
             enrichment_results <- dropGO(enrichment_results, level = levels_to_drop)
         
      }
+
      enrichment_results_table <- as_tibble(enrichment_results)
      write.csv(enrichment_results_table, here(local_path, paste0(filename,'GO_OverRepresentation_analysis_results_', ontology, '.csv')))
 
      if (nrow(enrichment_results_table) > 1) {
-          ## Add similarity matrix to the termsim slot of enrichment result
+       if (simplify_terms == T) {
+            ## Add similarity matrix to the termsim slot of enrichment result
           enrichment_results <- enrichplot::pairwise_termsim(enrichment_results, showCategory = dim(enrichment_results)[1])
-          enrichment_results_summarized <- clusterProfiler::simplify(enrichment_results, cutoff=0.7, by="RichFactor", select_fun=max)
+          enrichment_results_unfiltered <-  enrichment_results
+          enrichment_results <- clusterProfiler::simplify(enrichment_results, cutoff=0.7, by=simplify_by, select_fun=simplify_function)        
+       }
 
-          p1 <- dotplot(enrichment_results_summarized,
-               showCategory=50,
+          write.csv(as_tibble(enrichment_results), here(local_path, paste0(filename,'GO_OverRepresentation_analysis_results_filtered_', ontology, '.csv')))
+          p1 <- dotplot(enrichment_results,
+               showCategory=nterms_to_plot,
                title = paste0(filename,'GO ORA UP in ', group, ' - ', ontology),
-            #    x = 'Count',
-               label_format = 60)
+            #    x = 'p.adjust',
+               label_format = 60, 
+               font.size = font_size) 
           print(p1)
           ggsave(plot = p1, filename = paste0(filename, 'GO overrepresentation_analysis_dotplot_', ontology,'.pdf'), width = 10, height = 18, path = local_path)
 
           ## =  Enrichmap clusters the 50 most significant (by padj) GO terms to visualize relationships between terms
-          
+          if (run_network) {
+               p2 <- try(emapplot(enrichment_results_unfiltered, showCategory = network_n_terms) + ggtitle(paste0(filename, 'GO Overrepresentation analysis ', ontology)))
+               print(p2)
+               p2 <- try(emapplot(enrichment_results, showCategory = network_n_terms) + ggtitle(paste0(filename, 'GO Overrepresentation analysis filtered terms', ontology)))
+               print(p2)
+            #    ggsave(plot = p2, filename = paste0(filename, 'GO_overrepresentation_analysis_network_', ontology,'.pdf'), width = 14, height = 18, path = local_path)
+            
+          }
 # #           p2 <- try(emapplot(enrichment_results, showCategory = (nrow(enrichment_results_table)-1)) + ggtitle(paste0(filename, 'Overrepresentation analysis ', ontology)))
 #         #   p2 <- try(emapplot(enrichment_results, showCategory = (nrow(enrichment_results_table)-1)) + ggtitle(paste0(filename, 'Overrepresentation analysis ', ontology)))
 #           p2 <- treeplot(enrichment_results, showCategory = 50) + ggtitle(paste0(filename, 'Overrepresentation analysis ', ontology))
@@ -110,12 +123,12 @@ GO_GSEA_analysis <- function (results, local_path, ontology = 'ALL', group) {
            }
 }
 
-GO_functional_analysis <- function (results,  cluster, path='./', FC_threshold = 0.3, p_value_threshold = 0.05, group1 = '', group2 = '', run_GSEA = FALSE, ...) {
-
+GO_functional_analysis <- function (results,  grouping_var, path='./', FC_threshold = 0.3, p_value_threshold = 0.05, group1 = '', group2 = '', run_GSEA = FALSE, ...) {
+ 
     #  results <- results[which(duplicated(results$genes) == F),]
 #    results$entrezid <-  results |> pull(genes) |> bitr(fromType = 'SYMBOL', toType = 'ENTREZID', OrgDb = 'org.Mm.eg.db', drop = FALSE) |> pull(ENTREZID)
     #results <- results[which(duplicated(results$entrezid) == F),]
-
+cluster <- grouping_var
 
 ####################################### UP ########################################
 
@@ -172,8 +185,7 @@ GO_functional_analysis <- function (results,  cluster, path='./', FC_threshold =
 
 
 
-GO_functional_analysis_cluster_identification <- function (scRNAseq, results, identities = 'seurat_clusters', path='./', object_annotations, ...) {
-
+GO_functional_analysis_cluster_identification <- function (scRNAseq, results, path='./', object_annotations = '', top_gene_number = 50, ...) {
 
     color_scale <- viridis(n = 4, direction = -1)
     options(enrichplot.colours = color_scale)
@@ -184,21 +196,36 @@ GO_functional_analysis_cluster_identification <- function (scRNAseq, results, id
      all_genes <- Features(scRNAseq[['RNA']]) |>unique()
     #  all_genes_entrezid <- Features(scRNAseq[['RNA']]) |>unique() |> bitr(fromType = 'SYMBOL', toType = 'ENTREZID', OrgDb = 'org.Mm.eg.db', drop = FALSE) |> pull(ENTREZID) |> unique()
 
-    #  mouse_database <- msigdbr(species = 'Mus musculus',category = 'C8') |> dplyr::select(gs_name, entrez_gene)
+    gene_lists <- results %>%
+        group_by(cluster) %>%
+        arrange(desc(avg_log2FC)) |>
+        slice_head(n = top_gene_number)  |>
+        ungroup() |>
+        select(cluster, gene)  |>
+        group_by(cluster) |>
+        mutate(id = row_number()) |>
+        ungroup() |>
+        pivot_wider(names_from = cluster, values_from = gene)  |>
+        select(-id) |>
+        as.list() |>
+        map(~ .x[!is.na(.x)])
+        
+    overrepresentation_results <- GO_overrepresentation_analysis_multiple_lists(gene_lists, all_genes = all_genes, local_path = local_path, grouping_var = 'Clusters', ...)  
 
-for (cluster in unique(scRNAseq@meta.data |> pull(!!identities))) {
+    return(overrepresentation_results$plot)
+
 
 ####################################### GO ########################################
 
-     name <- paste0('Cluster ', cluster, ' - ')
+    #  name <- paste0('Cluster ', cluster, ' - ')
 
-     significant_results_cluster <- results |> 
-          filter(cluster == cluster) |>
-          arrange(desc(avg_log2FC)) |>
-          pull(gene) |>
-          unique()
+    #  significant_results_cluster <- results |> 
+    #       filter(cluster == cluster) |>
+    #       arrange(desc(avg_log2FC)) |>
+    #       pull(gene) |>
+    #       unique()
 
-     GO_overrepresentation_analysis(significant_results_cluster, all_genes, local_path, ontology = 'ALL',filename = name, ...)  
+    #  GO_overrepresentation_analysis(significant_results_cluster, all_genes, local_path, ontology = 'ALL',filename = name, group = name, nterms_to_plot = 20, ...)  
  
 #################### msigdbr ####################
 
@@ -234,8 +261,6 @@ for (cluster in unique(scRNAseq@meta.data |> pull(!!identities))) {
     #         ggsave(paste0(name,'MSigDbr_overrepresentation_analysis_network_', 'C8','.pdf'), width = 14, height = 18, path = local_path)
     #     }
      
-}
-     return()
 }
 msigdbr_functional_analysis <- function (results,cluster,  path='./') { 
     
@@ -333,229 +358,57 @@ msigdbr_functional_analysis <- function (results,cluster,  path='./') {
     
     return()
 }
-pathways_of_interest_analysis <- function (results,  pathways_of_interest_list, cluster,path='./', FC_threshold = 0.3, p_value_threshold = 0.1, max_overlaps = 1000, label_size = 5, group1, group2, comparison) {
 
-    results <- results[which(duplicated(results$genes) == F),]
-    results$entrezid <-  results |> pull(genes) |> bitr(fromType = 'SYMBOL', toType = 'ENTREZID', OrgDb = 'org.Mm.eg.db', drop = FALSE) |> pull(ENTREZID)
-    results <- results[which(duplicated(results$entrezid) == F),] |>
-    drop_na(entrezid)
+
+GO_overrepresentation_analysis_multiple_lists <- function (gene_list, all_genes, local_path, ontology = 'ALL', minGSSize = 5, maxGSSize = 400, filename = '',  drop_levels = F, levels_to_drop = c(), simplify_function = min, simplify_by = 'p.adjust', simplify_terms = F, run_network = F, network_n_terms = 100, nterms_to_plot = 5, font_size = 8, grouping_var = '', ...)  {
+
+     color_scale <- viridis(n = 4, direction = -1)
+     options(enrichplot.colours = color_scale)
+     
+     enrichment_results <- compareCluster(
+          geneCluster = gene_list,
+          fun = "enrichGO",
+          universe = all_genes,
+          keyType = "SYMBOL",
+          OrgDb = org.Mm.eg.db,
+          ont = ontology,
+          pAdjustMethod = "BH",
+          minGSSize    = minGSSize,
+          maxGSSize    = maxGSSize,
+          qvalueCutoff = 0.2,
+          pvalueCutoff = 0.05
+     )
+
+     if (drop_levels  == T ) {
+            enrichment_results <- dropGO(enrichment_results, level = levels_to_drop)
         
-    local_path <- paste0(path, 'pathways_of_interest_', cluster, '/')
-    unlink(local_path, recursive = T)
-    dir.create(local_path)
+     }
+     enrichment_results <- enrichment_results |>
+          mutate(Cluster = fct_inseq(Cluster)) 
+     #   group_by(Cluster) |>
+     #   arrange((p.adjust))# |>
+       # ungroup()
+     enrichment_results_table <- as_tibble(enrichment_results)
+     write.csv(enrichment_results_table, here(local_path, paste0(filename,'GO_OverRepresentation_analysis_gene_lists_results_', ontology, '.csv')))
 
+     if (nrow(enrichment_results_table) > 1) {
+       if (simplify_terms == T) {
+            ## Add similarity matrix to the termsim slot of enrichment result
+          enrichment_results <- enrichplot::pairwise_termsim(enrichment_results, showCategory = dim(enrichment_results)[1])
+          enrichment_results_unfiltered <-  enrichment_results
+          enrichment_results <- clusterProfiler::simplify(enrichment_results, cutoff=0.7, by=simplify_by, select_fun=simplify_function)        
+       }
 
-    # pathways_of_interest <- pathways_of_interest |>
-    #     # pivot_longer(cols = everything(),values_to = 'genes', names_to = 'pathway', values_drop_na = TRUE) |>
-    #     arrange(desc(pathway)) 
-
-    pathways_of_interest_list <- map(pathways_of_interest_list, \(x) bitr(x, fromType = 'SYMBOL', toType = 'ENTREZID', OrgDb = 'org.Mm.eg.db', drop = FALSE) |> pull(ENTREZID))
-
-    #head(pathways_of_interest)
-
-    fold_changes <- results |> arrange(desc(log2FoldChange)) |> pull(log2FoldChange)
-    names(fold_changes) <- results |> arrange(desc(log2FoldChange)) |> pull(entrezid)
-
-    for (term_of_interest in names(pathways_of_interest_list)) {
-
-        term <- pathways_of_interest_list[[term_of_interest]]
-
-        gsea_results <- GSEA(geneList     = fold_changes,
-                    # OrgDb        = org.Mm.eg.db,
-                    # ont          = "ALL",
-                    # keyType = "SYMBOL",
-                    minGSSize    = 4,
-                    maxGSSize    = 500,
-                    pvalueCutoff = 1,
-                    verbose      = FALSE,
-                    TERM2GENE = term)
-                    
-        anno <- gsea_results[term_of_interest, c("NES", "pvalue", "p.adjust")]
-        lab <- paste0(names(anno), "=",  round(anno, 4), collapse="\n")
-
-        p1 <- enrichplot::gseaplot2(gsea_results, geneSetID = term_of_interest, pvalue_table = FALSE, subplots = 1, base_size = 13,title = term_of_interest)
-
-        x_position <- ggplot_build(p1)$layout$panel_params[[1]]$x.range[2]*0.75
-        y_position <- ggplot_build(p1)$layout$panel_params[[1]]$y.range[2]-(ggplot_build(p1)$layout$panel_params[[1]]$y.range[2]-ggplot_build(p1)$layout$panel_params[[1]]$y.range[1])*0.17
-
-        p1 <- p1 + annotate("text", x_position, y_position, label = lab, hjust=0, vjust=0, size = 5)
-        p2 <- enrichplot::gseaplot2(gsea_results, geneSetID = term_of_interest, pvalue_table = FALSE, subplots = 2, base_size = 13)
-        p3 <- enrichplot::gseaplot2(gsea_results, geneSetID = term_of_interest, pvalue_table = FALSE, subplots = 3, base_size = 13)     
-                
-        cowplot::plot_grid(p1, p2, p3, ncol = 1, rel_heights = c(1.5, 0.5, 1), align = 'v')    
-        ggsave(paste0('GSEA_', term_of_interest, '.pdf'), path = local_path, height = 10, width = 8)
-
-        ########## scatterplot ##########
-
-        ## prepare for visualization
-        results <- results %>% 
-                        
-                        mutate(                        
-                            genes_to_label2 = ifelse(entrezid %in% term$genes,  genes ,''),
-                            add_label = ifelse(entrezid %in% term$genes,  'YES' ,'NO')
-                            ) |>
-                        mutate(add_label <- factor(add_label, levels = c('NO', 'YES'))) |>     
-                        mutate(fold_change_direction = case_when(
-                                                log2FoldChange>= 0 ~ 'UP',
-                                                log2FoldChange<= 0 ~ "DOWN",
-                                                TRUE ~ 'NO')) |>
-                        arrange(add_label)
-                         
-                            
-        my_colors <- c( "#32228b", "gray")
-        names(my_colors) <- c("YES", "NO")
-        
-        # Scatterplot
-        limx <- results |> pull(paste0('Avg_', group1)) |> max()
-        limy <- results |> pull(paste0('Avg_', group2)) |> max()
-        mylims <- max(limx, limy)*5
-        
-        results |> 
-            ggplot(aes(x = !!sym(paste0('Avg_', group1)), y = !!sym(paste0('Avg_', group2)), label = genes_to_label2, col = add_label))+
-                geom_point(size=1.3
-                ) +
-                geom_abline(slope = 1, intercept = 0)+
-                geom_text_repel(
-                    size=label_size,
-                    box.padding = 0.2,
-                    show.legend = FALSE,
-                    max.overlaps = max_overlaps,
-                    max.time = 30,
-                    max.iter = 10000000,
-                    nudge_x = ifelse(results$fold_change_direction == 'UP', -0.75, 0.75),
-                    nudge_y = ifelse(results$fold_change_direction == 'UP', 0.75, -0.75),
-                    aes(segment.size=0.3, segment.alpha=0.4, segment.curvature=0)) +
-            scale_colour_manual(values=my_colors)+
-            
-            
-            theme(text=element_text(size=20), legend.position="none")+
-            labs(title=term_of_interest,
-                        x=paste0('Average Normalized Counts in ', group1),
-                        y=paste0('Average Normalized Counts in ',  group2))+       
-            theme_classic(base_size = 28, base_line_size=1) +
-            theme(legend.position="none", 
-                title = element_text(size=11),
-                axis.text= element_text(size=10),
-                axis.title= element_text(size=13))+
-        scale_x_log10(limits =  c(0.5, mylims))+
-        scale_y_log10(limits =  c(0.5, mylims))
-
-        ggsave(paste0(local_path, 'Pseudobulk scatter ', term_of_interest, '.pdf'))
-    }
-    return()
-}
-
-
-pathways_of_interest_analysis2 <- function (results,  pathways_of_interest_table, cluster,path='./', FC_threshold = 0.3, p_value_threshold = 0.1, max_overlaps = 1000, label_size = 5, group1, group2, comparison) {
-
-    results <- results[which(duplicated(results$genes) == F),]
-    results$entrezid <-  results |> pull(genes) |> bitr(fromType = 'SYMBOL', toType = 'ENTREZID', OrgDb = 'org.Mm.eg.db', drop = FALSE) |> pull(ENTREZID)
-    results <- results[which(duplicated(results$entrezid) == F),] |>
-    drop_na(entrezid)
-        
-    local_path <- paste0(path, 'pathways_of_interest_', cluster, '/')
-    unlink(local_path, recursive = T)
-    dir.create(local_path)
-
-
-    # pathways_of_interest_table <- pathways_of_interest_table |>
-    #     pivot_longer(cols = everything(),values_to = 'genes', names_to = 'pathway', values_drop_na = TRUE) |>
-    #     arrange(desc(pathway)) 
-
-    # pathways_of_interest_table$genes <- pathways_of_interest_table |> pull(genes) |> bitr(fromType = 'SYMBOL', toType = 'ENTREZID', OrgDb = 'org.Mm.eg.db', drop = FALSE) |> pull(ENTREZID) 
-
-#     pathways_of_interest_table <- pathways_of_interest_table |> filter(!is.na(genes) )
-
-    #head(pathways_of_interest_table)
-
-    fold_changes <- results |> arrange(desc(log2FoldChange)) |> pull(log2FoldChange)
-    names(fold_changes) <- results |> arrange(desc(log2FoldChange)) |> pull(entrezid)
-
-    for (term_of_interest in unique(pathways_of_interest_table$gs_name)) {
-
-        term <- pathways_of_interest_table |> filter(gs_name == term_of_interest)
-
-        gsea_results <- GSEA(geneList     = fold_changes,
-                    # OrgDb        = org.Mm.eg.db,
-                    # ont          = "ALL",
-                    # keyType = "SYMBOL",
-                    minGSSize    = 4,
-                    maxGSSize    = 500,
-                    pvalueCutoff = 1,
-                    verbose      = FALSE,
-                    TERM2GENE = term)
-                    
-        anno <- gsea_results[term_of_interest, c("NES", "pvalue", "p.adjust")]
-        lab <- paste0(names(anno), "=",  round(anno, 4), collapse="\n")
-
-        p1 <- enrichplot::gseaplot2(gsea_results, geneSetID = term_of_interest, pvalue_table = FALSE, subplots = 1, base_size = 13,title = term_of_interest)
-
-        x_position <- ggplot_build(p1)$layout$panel_params[[1]]$x.range[2]*0.75
-        y_position <- ggplot_build(p1)$layout$panel_params[[1]]$y.range[2]-(ggplot_build(p1)$layout$panel_params[[1]]$y.range[2]-ggplot_build(p1)$layout$panel_params[[1]]$y.range[1])*0.17
-
-        p1 <- p1 + annotate("text", x_position, y_position, label = lab, hjust=0, vjust=0, size = 5)
-        p2 <- enrichplot::gseaplot2(gsea_results, geneSetID = term_of_interest, pvalue_table = FALSE, subplots = 2, base_size = 13)
-        p3 <- enrichplot::gseaplot2(gsea_results, geneSetID = term_of_interest, pvalue_table = FALSE, subplots = 3, base_size = 13)     
-                
-        cowplot::plot_grid(p1, p2, p3, ncol = 1, rel_heights = c(1.5, 0.5, 1), align = 'v')    
-        ggsave(paste0('GSEA_', term_of_interest, '.pdf'), path = local_path, height = 10, width = 8)
-
-        ########## scatterplot ##########
-
-        ## prepare for visualization
-        results <- results %>% 
-                        
-                        mutate(                        
-                            genes_to_label2 = ifelse(entrezid %in% term$genes,  genes ,''),
-                            add_label = ifelse(entrezid %in% term$genes,  'YES' ,'NO')
-                            ) |>
-                        mutate(add_label <- factor(add_label, levels = c('NO', 'YES'))) |>     
-                        mutate(fold_change_direction = case_when(
-                                                log2FoldChange>= 0 ~ 'UP',
-                                                log2FoldChange<= 0 ~ "DOWN",
-                                                TRUE ~ 'NO')) |>
-                        arrange(add_label)
-                         
-                            
-        my_colors <- c( "#32228b", "gray")
-        names(my_colors) <- c("YES", "NO")
-        
-        # Scatterplot
-        limx <- results |> pull(paste0('Avg_', group1)) |> max()
-        limy <- results |> pull(paste0('Avg_', group2)) |> max()
-        mylims <- max(limx, limy)*5
-        
-        results |> 
-            ggplot(aes(x = !!sym(paste0('Avg_', group1)), y = !!sym(paste0('Avg_', group2)), label = genes_to_label2, col = add_label))+
-                geom_point(size=1.3
-                ) +
-                geom_abline(slope = 1, intercept = 0)+
-                geom_text_repel(
-                    size=label_size,
-                    box.padding = 0.2,
-                    show.legend = FALSE,
-                    max.overlaps = max_overlaps,
-                    max.time = 30,
-                    max.iter = 10000000,
-                    nudge_x = ifelse(results$fold_change_direction == 'UP', -0.75, 0.75),
-                    nudge_y = ifelse(results$fold_change_direction == 'UP', 0.75, -0.75),
-                    aes(segment.size=0.3, segment.alpha=0.4, segment.curvature=0)) +
-            scale_colour_manual(values=my_colors)+
-            
-            
-            theme(text=element_text(size=20), legend.position="none")+
-            labs(title=term_of_interest,
-                        x=paste0('Average Normalized Counts in ', group1),
-                        y=paste0('Average Normalized Counts in ',  group2))+       
-            theme_classic(base_size = 28, base_line_size=1) +
-            theme(legend.position="none", 
-                title = element_text(size=11),
-                axis.text= element_text(size=10),
-                axis.title= element_text(size=13))+
-        scale_x_log10(limits =  c(0.5, mylims))+
-        scale_y_log10(limits =  c(0.5, mylims))
-
-        ggsave(paste0(local_path, 'Pseudobulk scatter ', term_of_interest, '.pdf'))
-    }
-    return()
+          write.csv(as_tibble(enrichment_results), here(local_path, paste0(filename,'GO_OverRepresentation_analysis_gene_lists_results__filtered_', ontology, '.csv')))
+          p1 <- dotplot(enrichment_results,
+               showCategory=nterms_to_plot,
+               title = paste0(filename,'GO Overrepresentation analysis ', ' - ', ontology),
+            #    x = 'p.adjust',
+               label_format = 60, 
+               font.size = font_size) +
+               labs(x = grouping_var)
+          print(p1)
+          ggsave(plot = p1, filename = paste0(filename, 'GO overrepresentation_analysis_dotplot_', ontology,'.pdf'), width = 10, height = 18, path = local_path)
+     }
+     return(list(plot = p1, results = enrichment_results))
 }
