@@ -1,0 +1,623 @@
+---
+title: VDJ analysis of Abau and Ftula infected mice - lungs
+author: Eduard Ansaldo
+date: '`r Sys.Date()`'
+verbose: false
+engine: knitr
+knitr:
+  opts_chunk: 
+    echo: false
+    warning: false
+    message: false
+    error: false
+    cache: true
+    results: markdown
+    code-fold: true
+    cache-lazy: false
+    
+processing: true
+
+execute: 
+  cache: true
+
+
+format:
+  html:
+    embed-resources: true
+    fig-cap-location: top
+    toc: true
+    toc-depth: 3
+
+    toc-expand: 1
+    toc-location: left
+    toc-title: Table of Contents
+    toc-collapse: true
+    number-sections: true
+    page-layout: full
+    fig-width: 7
+    fig-height: 7
+    fig-align: 'center'
+---
+
+```{r}
+#| cache: false
+# General R and plotting 
+library(conflicted)
+library(tidyverse)
+library(ggplot2)
+library(scales)
+library(patchwork)
+library(cowplot)
+library(gridExtra)
+library(ggrepel)
+library(stringr)
+library(VennDiagram)
+library(pheatmap)
+library(viridis)
+library(here)
+library(readxl)
+library(readxl)
+library(ggbeeswarm)
+library(tidyplots)
+library(extrafont)
+
+# Single Cell Analysis Packages
+library(Seurat)
+library(scRepertoire)
+library(circlize)
+library(scCustomize)
+library(SingleR)
+library(celldex)
+library(UCell)
+library(presto)
+library(scDblFinder)
+library(immunarch)
+
+# DEG, pathway enrichment and visualization packages
+library(DESeq2)
+# library(gprofiler2)
+library(clusterProfiler)
+library(DOSE)
+library(pathview)
+library(org.Mm.eg.db)
+library(scRepertoire)
+library(enrichplot)
+library(msigdbr)
+library(rlang)
+
+# Python Version 3.9.6!!! 
+
+# peconflicts_scout()
+conflicts_prefer(dplyr::filter)
+conflicts_prefer(dplyr::count)
+conflicts_prefer(dplyr::select)
+conflicts_prefer(base::setdiff)
+conflicts_prefer(dplyr::rename)
+conflicts_prefer(base::unname)
+conflicts_prefer(tidyr::expand)
+conflicts_prefer(tidyplots::save_plot)
+
+# Loading custom functions
+source(here('scripts/function_template.r'))
+source(here('scripts/metascape_functions.r'))
+source(here('scripts/circlize_functions.r'))
+
+
+```
+
+
+```{r}
+#| results: hide 
+#| cache: false 
+# Setting working directory and seed
+# renv::update()
+# renv::snapshot()
+# renv::init()
+# renv::status()
+set.seed(3514)
+# i_am('scripts/Analysis.qmd')
+here()
+results_path <- here('results/')
+dir.create(results_path)
+results_path <- here('results/')
+dir.create(results_path)
+figures_path <- here('results/figures/')
+dir.create(figures_path)
+# data_path <- here('data/')
+# dir.create(data_path)
+tables_path <- here('results/tables/')
+dir.create(tables_path)
+
+# Loading custom functions
+source(here('scripts/function_template.r'))
+source(here('scripts/metascape_functions.r'))
+source(here('scripts/circlize_functions.r'))
+source(here('scripts/ClusterProfiler_functions.r'))
+
+# Setting up color palettes
+diverging_palette <- hcl.colors(n = 20,'Purple-Green',rev = T)
+sequential_palette_dotplot <- hcl.colors(n = 20,'YlGn',rev = T)
+sequential_palette <- hcl.colors(n = 20,'Mako',rev = T)
+
+pathway_enrichment <- c('ClusterProfiler')
+
+knitr::dep_prev()
+```
+
+
+```{r}
+seurat_original <- readRDS(here('data/MAIT_Abau_Ftula_CT_Lungs.rds'))
+seurat_cell_cycle <- readRDS(here('data/MAIT_Abau_Ftula_CT_Lungs_cell_cycle.rds'))
+seurat_Abau <- readRDS(here('data/MAIT_Abau_Ftula_CT_Lungs_Abau_only.rds'))
+seurat_Ftula <- readRDS(here('data/MAIT_Abau_Ftula_CT_Lungs_Ftula_only.rds'))
+results_path <- here('results', 'Manuscript_figures')
+dir.create(results_path, recursive = T, showWarnings = F)
+# unlink(results_path, recursive = T)
+figures_path <- here('results/Manuscript_figures/figures/')
+dir.create(figures_path, recursive = T, showWarnings = F)
+tables_path <- here('results/Manuscript_figures/tables/')
+dir.create(tables_path, recursive = T, showWarnings = F)
+object_annotations <- 'manuscript_figures'
+
+rename_samples_and_groups <- function(seurat_obj) {
+    seurat_obj@meta.data <- seurat_obj@meta.data |>
+        mutate(Samples = str_remove(Samples, '_Mouse')) |> 
+        mutate(Samples = str_replace(Samples, 'CT-', 'Uninfected ')) |>
+        mutate(Samples = str_replace(Samples, 'Abau-', 'A. bau ')) |>
+        mutate(Samples = str_replace(Samples, 'Ftula-', 'F. tula ')) |>
+        mutate(Groups = str_replace(Groups, 'CT', 'Uninfected')) |>
+        mutate(Groups = str_replace(Groups, 'Abau', 'A. bau')) |>
+        mutate(Groups = str_replace(Groups, 'Ftula', 'F. tula')) |>
+        mutate(
+            Samples = factor(Samples, levels = c(
+                'Uninfected 1', 'Uninfected 2', 'Uninfected 3', 'Uninfected 4',
+                'A. bau 1', 'A. bau 2', 'A. bau 3', 'A. bau 4',
+                'F. tula 1', 'F. tula 2', 'F. tula 3', 'F. tula 4', 'F. tula 5'
+            )),
+            Groups = factor(Groups, levels = c('Uninfected', 'A. bau', 'F. tula'))
+        )
+    return(seurat_obj)
+}
+
+# Apply to all objects
+seurat_original <- rename_samples_and_groups(seurat_original)
+seurat_cell_cycle <- rename_samples_and_groups(seurat_cell_cycle)
+seurat_Abau <- rename_samples_and_groups(seurat_Abau)
+seurat_Ftula <- rename_samples_and_groups(seurat_Ftula)
+
+```
+
+```{r}
+group_colors <- c(
+    'A. bau' = '#0072b2', 
+    'F. tula' = '#d55e10', 
+    'Uninfected' = '#009e73'
+)
+
+# Setting up color palettes
+diverging_palette <- hcl.colors(n = 20,'Purple-Green',rev = T)
+sequential_palette_dotplot <- hcl.colors(n = 20,'YlGn',rev = T)
+sequential_palette <- hcl.colors(n = 20,'Mako',rev = T)
+diverging_palette_2 <- hcl.colors(n = 20,'RdBu',rev = T)
+# diverging_palette_3 <- hcl.colors(n = 20,'Geyser',rev = F)
+diverging_palette_3 <- diverging_palette_2
+
+UMAP_dot_size <- 10
+rasterize <- NULL
+
+full_object_original <- list()
+full_object_regressed <- list()
+Abau_object <- list()
+Ftula_object <- list()
+Milo_figures <- list()
+```
+
+# TCR repertoire analysis
+
+```{r}
+seurat <- seurat_cell_cycle
+```
+
+## General repertoire analysis
+
+```{r}
+#| layout-ncol: 2
+combined <- scRepertoire:::.expression2List(seurat, split.by ='Samples')
+combined <- combined[c(10, 11, 12, 13, 1, 2, 3, 4, 5, 6, 7, 8, 9)]
+str(combined, max.level = 1)
+levels(seurat$Samples)
+combined <- addVariable(combined, variable.name = 'Groups', variables = c('Uninfected', 'Uninfected', 'Uninfected', 'Uninfected', 'A. bau', 'A. bau', 'A. bau', 'A. bau', 'F. tula', 'F. tula', 'F. tula', 'F. tula', 'F. tula'))
+
+# Comparing clonal abundance between Abau and Ftula
+clonalAbundance(seurat, group.by = 'Groups', scale = T) +
+    labs(title = 'Clonal abundance by sample') +
+    theme(plot.title = element_text(hjust = 0.5, size = 16))
+
+# Comparing CDR3 length between Abau and Ftula
+clonalLength(seurat, group.by = 'Groups', scale = F, chain = 'TRA') +
+    scale_fill_discrete(group_colors) +
+    labs(title = 'Clonal length TRA by Group') +
+    theme(plot.title = element_text(hjust = 0.5, size = 16))
+
+clonalLength(seurat, group.by = 'Groups', scale = F, chain = 'TRB') +
+    scale_fill_discrete(group_colors) +
+    labs(title = 'Clonal length TRB by Group') +
+    theme(plot.title = element_text(hjust = 0.5, size = 16))
+
+# Comparing clonal space between Abau and Ftula
+clonalScatter(seurat,  
+              cloneCall ="aa", 
+              group.by = 'Groups',
+              x.axis = "A. bau", 
+              y.axis = "F. tula",
+              dot.size = "total",
+              graph = "proportion")
+
+# Analyzing percent AA usage
+percentAA(seurat, chain = 'TRB', group.by = 'Groups', aa.length = 19) +
+    labs(title = 'Percent of AA usage across CDR3-beta by Group') +
+    theme(plot.title = element_text(hjust = 0.5, size = 16))
+
+# Analyzing positional entropy
+positionalEntropy(seurat, chain = 'TRB', group.by = 'Groups') +
+    labs(title = 'Positional entropy of CDR3-beta by Group') +
+    theme(plot.title = element_text(hjust = 0.5, size = 16))
+
+# Analyzing chemical properties
+positionalProperty(seurat, 
+                   chain = 'TRB', 
+                   group.by = 'Groups', 
+                   method = 'atchleyFactors') +
+    labs(title = 'Positional properties of CDR3-beta by Group') +
+    theme(plot.title = element_text(hjust = 0.5, size = 16))
+
+# Analyzing V-J gene pairings
+percentVJ(seurat, 
+         chain = "TRB",
+         group.by = 'Groups') +
+    labs(title = 'Percent TRAV-TRAJ gene pairings by Groups') +
+    theme(plot.title = element_text(hjust = 0.5, size = 16))
+
+seurat_small <- seurat |> subset(subset = Groups %in% 'Uninfected', invert = T) # Removing uninfected samples for this analysis
+df.vj <- percentVJ(seurat_small, 
+                   chain = "TRB",
+                   group.by = 'Samples',
+                   exportTable = TRUE,
+                   summary.fun = "proportion") # Export proportions for PCA
+# Performing PCA on the V-J pairing matrix
+pc.vj <- prcomp(t(df.vj)) 
+# Getting data frame to plot from
+df_plot_vj <- as.data.frame(cbind(pc.vj$x[,1:2], colnames(df.vj)))
+colnames(df_plot_vj) <- c("PC1", "PC2", "Sample")
+df_plot_vj$PC1 <- as.numeric(df_plot_vj$PC1)
+df_plot_vj$PC2 <- as.numeric(df_plot_vj$PC2)
+# Plotting the PCA results
+ggplot(df_plot_vj, aes(x = PC1, y = PC2)) +
+  geom_point(aes(fill = Sample), shape = 21, size = 5) +
+  guides(fill=guide_legend(title="Samples")) +
+  scale_fill_manual(values = c('blue', 'blue1', 'blue2', 'blue3', 'darkorange', 'darkorange1', 'darkorange2', 'darkorange3', 'darkorange4')) +
+  theme_classic() +
+  labs(title = "PCA of TRBV-TRBJ Gene Pairings")
+
+vizGenes(seurat, x.axis = 'TRAV', plot = 'barplot')
+vizGenes(seurat, x.axis = 'TRAJ', plot = 'barplot')
+
+
+
+```
+
+## V-J gene pairing analysis
+
+```{r}
+
+# Analyzing V-J gene pairings
+TRBV_J_table <- percentVJ(seurat, 
+         chain = "TRB",
+         group.by = 'Groups',
+         exportTable = T)
+
+# Analyzing V-J gene pairings
+TRAV_J_table <- percentVJ(seurat, 
+         chain = "TRA",
+         group.by = 'Groups',
+         exportTable = T)
+
+
+source(here('scripts/circlize_functions.r'))
+create_V_J_chord_diagram(TRBV_J_table, figures_path = figures_path,group_name = 'Uninfected')
+create_V_J_chord_diagram(TRBV_J_table, figures_path = figures_path, group_name = 'A. bau')
+create_V_J_chord_diagram(TRBV_J_table, figures_path = figures_path,group_name = 'F. tula')
+
+# create_V_J_chord_diagram(TRAV_J_table, figures_path = figures_path, group_name = 'A. bau', chain_a = 'TRAV', chain_b = 'TRAJ')
+# create_V_J_chord_diagram(TRAV_J_table, figures_path = figures_path,group_name = 'F. tula', chain_a = 'TRAV', chain_b = 'TRAJ')
+# create_V_J_chord_diagram(TRAV_J_table, figures_path = figures_path,group_name = 'Uninfected', chain_a = 'TRAV', chain_b = 'TRAJ')
+```
+
+
+## Diversity analysis: D50 
+
+```{r}
+source(here('scripts/function_template.r'))
+plot <- calculate_D50(seurat, cell_grouping_var = orig.ident, replicate_var = Samples, replicate_group_var = Groups, results_path = results_path, figures_path = figures_path, tables_path = tables_path, colors= group_colors) 
+
+plot + 
+    scale_y_continuous(limits = c(0, 0.5), expand = expansion(mult = c(0, 0))) +
+    theme(plot.margin = margin(4, 4, 4, 4)) +
+    ggpubr::stat_compare_means(comparisons = list(c('A. bau', 'F. tula'), c('A. bau', 'Uninfected'), c('F. tula', 'Uninfected')), label = 'p.signif', method = 'wilcox.test',  hide.ns = F, label.y = 0.45 , step.increase = 0.06, bracket.size = 0.7, size = 6) +
+    coord_cartesian(clip = 'off') 
+
+
+```
+
+## Repertoire overlap analysis: Overlap coefficient
+
+```{r}
+
+# immunarch_table <- exportClones(seurat, format = 'immunarch', write.file = FALSE, group.by = 'Samples')
+# overlap <- repOverlap(immunarch_table$data, .method = 'overlap', .verbose=FALSE)
+# vis(overlap) + ggtitle('Overlap Coefficient')
+# ggsave(filename = paste0(figures_path, 'overlap_coefficient.pdf'))
+combined2 <- scRepertoire:::.expression2List(seurat, split.by ='Samples')
+overlap_coefficient <- clonalOverlap(combined2, cloneCall = 'aa', chain = 'both',exportTable = T,method = 'overlap')
+
+clonalOverlap(combined2, cloneCall = 'aa', chain = 'both',method = 'overlap') +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    labs(title = 'TCR repertoire overlap coefficient across samples') +
+    theme(plot.title = element_text(hjust = 0.5, size = 16))
+
+comparison_colors <- c(
+    'A. bau vs A. bau' = '#d55e10',
+    'F. tula vs F. tula' = '#0072b2',
+    'A. bau vs F. tula' = 'purple',
+    'A. bau vs Uninfected' = 'grey50',
+    'F. tula vs Uninfected' = 'grey50',
+    'Uninfected vs Uninfected' = 'grey80'
+)
+
+overlap_coefficient |> 
+    rownames_to_column('Sample') |>
+    pivot_longer(cols = -c(1), names_to = 'Sample_2', values_to = 'Morisita_index', values_drop_na = TRUE)   |>
+    mutate(Comparison = case_when(
+        str_detect(Sample, 'A. bau') & str_detect(Sample_2, 'A. bau') ~ 'A. bau vs A. bau',
+        str_detect(Sample, 'F. tula') & str_detect(Sample_2, 'F. tula') ~ 'F. tula vs F. tula',
+        str_detect(Sample, 'Uninfected') & str_detect(Sample_2, 'Uninfected') ~ 'Uninfected vs Uninfected',
+        str_detect(Sample, 'A. bau') & str_detect(Sample_2, 'F. tula') ~ 'A. bau vs F. tula',
+        str_detect(Sample, 'A. bau') & str_detect(Sample_2, 'Uninfected') ~ 'A. bau vs Uninfected',
+        str_detect(Sample, 'F. tula') & str_detect(Sample_2, 'Uninfected') ~ 'F. tula vs Uninfected',
+        str_detect(Sample, 'F. tula') & str_detect(Sample_2, 'A. bau') ~ 'A. bau vs F. tula',
+        str_detect(Sample, 'Uninfected') & str_detect(Sample_2, 'A. bau') ~ 'A. bau vs Uninfected',
+        str_detect(Sample, 'Uninfected') & str_detect(Sample_2, 'F. tula') ~ 'F. tula vs Uninfected',
+        TRUE ~ 'Other'  
+    ))  |>
+    filter(Comparison %in% c('A. bau vs A. bau', 'F. tula vs F. tula', 'A. bau vs F. tula')) |>
+    ggplot(aes(x = Comparison, y = Morisita_index, color = Comparison)) +
+        geom_beeswarm(size = 3) +
+        stat_summary(fun = mean, geom = "bar", position = position_dodge(width = 0.7), width = 0.5, aes(fill = Comparison, alpha = 0.5)) +
+        stat_summary(fun.data = mean_se, fun.args = list(mult = 1),
+            geom = "errorbar", width = 0.2, position = position_dodge(width = 0.7)) +
+        theme_classic() +
+        labs(x = 'Pairwise comparison', y = "Overlap coefficient", title = 'TCR repertoire overlap coefficient across groups') +
+        guides(alpha = 'none')+
+        theme(axis.text.x = element_text(angle = 45, hjust = 1),
+            text = element_text(size = 14),
+            axis.line = element_line(colour = "black"))+
+        scale_color_manual(values = comparison_colors) + scale_fill_manual(values = comparison_colors) +
+        scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+        theme(plot.margin = margin(4, 4, 4, 4)) +
+        ggpubr::stat_compare_means(comparisons = list(c('A. bau vs A. bau', 'A. bau vs F. tula'), c('F. tula vs F. tula', 'A. bau vs F. tula'), c('A. bau vs A. bau', 'F. tula vs F. tula')), label = 'p.signif', method = 'wilcox.test',  hide.ns = F , step.increase = 0.1, bracket.size = 0.7, size = 6) +
+        coord_cartesian(clip = 'off')
+# ggsave(plot = plot1, filename = 'overlap_coefficient_across_groups.pdf', width = 6, height = 6, path = figures_path)
+
+
+
+```
+
+## Repertoire clonal dynamics
+
+```{r}
+
+seurat <- seurat_cell_cycle
+
+# contigs <- read.csv(here('data/cluster_processing_2/aggr_all/outs/vdj_t/filtered_contig_annotations.csv'))
+# #Demultiplexing VDJ libraries
+# contig_list <- createHTOContigList(contigs, seurat, group.by = "Samples")
+# contig_list <- contig_list[c(levels(seurat$Samples))]
+# # Combining the Contigs
+# combined <- combineTCR(contig_list, removeNA = TRUE, samples=c(levels(seurat$Samples)), filterMulti = TRUE)
+# # # #Adding Samples as variables
+# combined <- addVariable(combined, variable.name='Samples', variables=c(unique(seurat$Samples)))                                    
+# ## Integrating data with seurat object
+# cell_names <- Cells(seurat)
+# groups_merge <- pull(seurat@meta.data, Samples)
+# #Changing barcodes on the seurat object for the merge with VDJ data
+# new_cell_names <- paste(groups_merge, cell_names, sep='_')
+# seurat$barcode <- cell_names
+# seurat <- RenameCells(seurat, new.names=new_cell_names)
+# # #Combining VDJ and Seurat Object
+# seurat <- combineExpression(combined, seurat, proportion = FALSE, cloneCall='aa', group.by='Samples', chain = 'both', cloneSize = c(Single=1, Double=2, Medium=10, Large=1000))
+# # Renaming cells back to original barcodes
+# seurat <- RenameCells(seurat, new.names=seurat$barcode)
+# seurat@meta.data <- seurat@meta.data |> mutate(
+#     cloneSize = case_when(
+#         str_detect(cloneSize, 'Single') ~ 'Single (1)',
+#         str_detect(cloneSize, 'Double') ~ 'Double (2)',
+#         str_detect(cloneSize, 'Medium') ~ 'Medium (3-10)',
+#         str_detect(cloneSize, 'Large') ~ 'Large (>10)',
+#         is.na(cloneSize) ~ 'No TCR detected'
+#     ) ) |>
+#      mutate(cloneSize = factor(cloneSize, levels = c('Single (1)', 'Double (2)', 'Medium (3-10)', 'Large (>10)')))
+
+
+clonotype_size_table <- seurat@meta.data |>
+    dplyr::select(c('Samples', 'cloneSize')) |>
+    table() |>
+    as_tibble() |>
+    mutate(Groups = case_when(
+        str_detect(Samples, 'A. bau') ~ 'A. bau',
+        str_detect(Samples, 'F. tula') ~ 'F. tula',
+        str_detect(Samples, 'Uninfected') ~ 'Uninfected',
+    ),
+        # cloneSize = factor(cloneSize, levels = c('Single (1)', 'Double (2)', 'Medium (3-10)', 'Large (>10)') |> rev())
+    )  |> 
+    mutate(
+        Groups = factor(Groups, levels = c('Uninfected', 'A. bau', 'F. tula')),
+        Samples = factor(Samples, levels = levels(seurat$Samples))
+        ) |>
+    arrange((Samples))
+
+clonotype_size_table <- clonotype_size_table |>
+    group_by(Samples) |>
+    mutate(frequency_within_sample = n/sum(n)*100) |>
+    ungroup()  |>
+    group_by(Groups) |>
+    mutate(frequency_within_group = n/sum(n)*100) |>
+    ungroup() 
+head(clonotype_size_table)
+
+clonotype_size_table |> 
+    ggplot(aes(x=Groups, y = frequency_within_group, fill=cloneSize))  +
+    geom_col() +
+    theme_classic() +
+    labs(x = 'Group', y = 'Percent (%)', title = 'Clonotype size by group')+
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+    scale_fill_viridis(discrete = T, na.value = 'grey90', direction = -1)
+ggsave(filename = paste0('clonotype_size_by_group_', '.pdf'), path = figures_path, width = 6, height = 6)
+
+clonotype_size_table |> 
+    ggplot(aes(x=Samples, y = n, fill=cloneSize))  +
+    geom_col() +
+    theme_classic() +
+    labs(x = 'Group', y = 'Cell count', title = 'Clonotype size by group')+
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+    scale_fill_viridis(discrete = T, na.value = 'grey90', direction = -1)
+ggsave(filename = paste0('clonotype_size_by_sample_', '.pdf'), path = figures_path, width = 10, height = 6)
+
+```
+
+
+```{r}
+#| fig-cap: "Clonal repertoire representation per group, clonotypes are colored by their classification (Small, Medium, Large, Hyper Expanded as a proportion) on A PER SAMPLE basis, which is why a clonotype with the same number of sequences can have a different classification."
+library( packcircles )
+source(here('scripts/function_template.r'))
+# Usage example:
+plot_clonal_repertoire(seurat, 'A. bau', figures_path)
+plot_clonal_repertoire(seurat, 'F. tula', figures_path)
+plot_clonal_repertoire(seurat, 'Uninfected', figures_path)
+
+```
+
+## Motif analysis
+
+```{r}
+CDR3_length <- function (seurat, chain = 'beta', group_by = Groups, group = 'Control') {
+
+    chain_column <- ifelse(chain == 'beta', 'CTaa_beta', 'CTaa_alpha')
+    seurat@meta.data <- seurat@meta.data |>
+        filter({{group_by}} == group) |>
+        select(-any_of(c('CTaa_alpha', 'CTaa_beta'))) |>
+        rownames_to_column(var = 'cell_barcode') |>
+        separate_wider_delim(CTaa,delim = '_',names = c('CTaa_alpha', 'CTaa_beta'), cols_remove = FALSE)  |>
+        column_to_rownames(var = 'cell_barcode')
+
+
+    # Calculating median CDR3 length
+    print(paste0('Mean CDR3', chain, ' length in ', group, ':'))
+    mean_length <-seurat@meta.data |>
+    filter(!is.na(!!as.name(chain_column))) |>
+    pull(!!as.name(chain_column)) |>
+    map_int(nchar) |>
+    mean()
+    print(mean_length)
+    cat('\n')
+
+    # Calculating median CDR3 length 
+    print(paste0('Median CDR3', chain, ' length in ', group, ':'))
+    median_length <-seurat@meta.data |>
+    filter(!is.na(!!as.name(chain_column))) |>
+    pull(!!as.name(chain_column)) |>
+    map_int(nchar) |>
+    median()
+    print(median_length)
+    cat('\n')
+    cat('\n')
+
+}
+
+groups <- c('A. bau', 'F. tula', 'Uninfected')
+walk(groups, \(group) CDR3_length(seurat, chain = 'alpha', group_by = Groups, group = group))
+walk(groups, \(group) CDR3_length(seurat, chain = 'beta', group_by = Groups, group = group))
+
+
+```
+
+
+```{r}
+#| layout-ncol: 3
+# renv::install('ggseqlogo')
+# renv::install('msa')
+library(msa)
+library(ggseqlogo)
+
+
+seurat@meta.data <- seurat@meta.data |>
+    rownames_to_column(var = 'cell_barcode') |>
+    select(-any_of(c('CTaa_alpha', 'CTaa_beta'))) |>
+    separate_wider_delim(CTaa,delim = '_',names = c('CTaa_alpha', 'CTaa_beta'), cols_remove = FALSE)  |>
+    column_to_rownames(var = 'cell_barcode')
+
+
+multiple_sequence_alignment_seurat <- function (seurat, chain, group_by = Groups, group = 'Control') {
+        align <- seurat@meta.data |> 
+            filter(!is.na({{chain}}) & {{group_by}} == group) |>
+            pull({{chain}}) |> 
+            msa(type = "protein", maxiters = 30)  |>
+            msaConvert(type="seqinr::alignment") |>
+            pluck('seq')
+        return(align)
+    }
+
+sequence_motif_alignment <- function (seurat, chain = 'beta', group_by = Groups) {
+        
+    chain_column <- ifelse(chain == 'beta', 'CTaa_beta', 'CTaa_alpha')
+    alignments = list()
+    alignments <- map(seurat@meta.data |> pull({{group_by}}) |> levels(), \(group) multiple_sequence_alignment_seurat(seurat, chain = !!as.name(chain_column), group_by = {{group_by}},  group = group))
+    names(alignments) <- seurat@meta.data |> pull({{group_by}}) |> levels()
+    plot <- ggseqlogo(alignments, method = 'probability', ncol = 1) +
+        labs(title = paste0('MAIT cell TCR ', chain, ' chain sequence motif by group')) +
+        theme(plot.title = element_text(hjust = 0.5, size = 16))
+    print(plot)
+    return(list(plot = plot, alignments = alignments) )
+}
+
+sequence_motif_fixed_length <- function (seurat, chain = 'beta', group_by = Groups, group = 'Control', length = 14) {
+        
+    chain_column <- ifelse(chain == 'beta', 'CTaa_beta', 'CTaa_alpha')
+    plot <- seurat@meta.data |>
+        filter(!is.na(!!as.name(chain_column)) & {{group_by}} == group) |>
+        filter(nchar(!!as.name(chain_column)) == length) |>
+        pull(!!as.name(chain_column))  |>
+    ggseqlogo(alignments, method = 'probability', ncol = 1) +
+        labs(title = paste0('MAIT cell TCR ', chain, ' chain sequence motif in ', group, ' (CDR3 length = ', length, ')')) +
+        theme(plot.title = element_text(hjust = 0.5, size = 14))
+    print(plot)
+}
+    
+
+# # motif_results_beta <- sequence_motif(seurat, chain = 'beta', group_by = Groups)
+# saveRDS(motif_results_beta, here(results_path, 'TCR_motif_results_TRB.rds'))
+# motif_results_beta <- readRDS(here(results_path, 'TCR_motif_results_TRB.rds'))
+# print(motif_results_beta$plot)
+
+# # motif_results_alpha <- sequence_motif(seurat, chain = 'alpha', group_by = Groups)
+# saveRDS(motif_results_alpha, here(results_path, 'TCR_motif_results_TRA.rds'))
+# motif_results_alpha <- readRDS(here(results_path, 'TCR_motif_results_TRA.rds'))
+# print(motif_results_alpha$plot)
+
+groups <- c('A. bau', 'F. tula', 'Uninfected')
+walk(groups, \(group) sequence_motif_fixed_length(seurat, chain = 'alpha', group_by = Groups, group = group, length = 12))
+walk(groups, \(group) sequence_motif_fixed_length(seurat, chain = 'beta', group_by = Groups, group = group, length = 14))
+walk(groups, \(group) sequence_motif_fixed_length(seurat, chain = 'beta', group_by = Groups, group = group, length = 15))
+
+```

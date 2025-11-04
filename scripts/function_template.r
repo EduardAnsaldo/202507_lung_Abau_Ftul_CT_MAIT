@@ -18,7 +18,7 @@ scatterplot <- function (results, group1, group2, local_figures_path, FC_thresho
     results_scatter <- results |>  
         drop_na(pvalue) |>
         mutate(
-            log10_pval = log10(padj+10^-90)*-1,
+            log10_pval = log10(padj+10^-300)*-1,
             distance_from_diagonal =  (abs((log10(!!sym(paste0('Avg_', group2))+1)) - (log10(!!sym(paste0('Avg_', group1))+1)))/sqrt(2))) |>            
         mutate(
             genes_to_label_first = ifelse(
@@ -142,7 +142,7 @@ volcano_plot <- function (results, group1, group2, cluster, local_figures_path, 
     results_volcano <- results |>  
         drop_na(pvalue) |>
         mutate(
-            log10_pval = log10(padj+10^-90)*-1,
+            log10_pval = log10(padj+10^-300)*-1,
             distance_from_diagonal =  (abs((log10(!!sym(paste0('Avg_', group2))+1)) - (log10(!!sym(paste0('Avg_', group1))+1)))/sqrt(2))) |>            
         mutate(
             genes_to_label_UP = ifelse(
@@ -700,11 +700,10 @@ DEG_FindMarkers_SCT_assay <- function (scRNAseq, comparison, group1, group2, is_
 
 # Bulk functions
 
-bulk_analysis <- function (counts_table, comparison = 'Groups', group1, group2, cluster='', path='./', FC_threshold = 0.3, p_value_threshold = 0.05, max_overlaps = 15, label_size = 5, pathways_of_interest = NULL, label_threshold = 100000, distance_from_diagonal_threshold = 0.4, gene_lists_to_plot = NULL, expression_threshold_for_gene_list = 20, colors = c('green4', 'darkorchid4'), minimum_cell_number = 10, run_pathway_enrichment = TRUE) {
+bulk_analysis <- function (counts_table, comparison = 'Groups', group1, group2, cluster='', path='./', FC_threshold = 0.3, p_value_threshold = 0.05, max_overlaps = 15, label_size = 5, pathways_of_interest = NULL, label_threshold = 100000, distance_from_diagonal_threshold = 0.4, gene_lists_to_plot = NULL, expression_threshold_for_gene_list = 20, minimum_cell_number = 10, run_pathway_enrichment = FALSE, ...) {
 
     # Set colors for the plot
-    my_colors <- c(colors, "gray")
-    names(my_colors) <- c("DOWN", "UP", "NO")
+    # names(my_colors) <- c("DOWN", "UP", "NO")
     
     # Set Paths
     gene_lists_path <- here(path, 'gene_lists/')
@@ -805,8 +804,11 @@ bulk_analysis <- function (counts_table, comparison = 'Groups', group1, group2, 
     DEG_DOWN_count <- nrow(results_filtered_DOWN)
 
     # Generate scatter and volcano plots
-    results_scatter <- scatterplot(results, group1, group2, cluster, my_colors, local_figures_path, FC_threshold, p_value_threshold, max_overlaps = 15, label_size, label_threshold, distance_from_diagonal_threshold, test_type = 'Bulk')
-    volcano_plot(results_scatter, group1, group2, cluster, my_colors, local_figures_path, FC_threshold, p_value_threshold, max_overlaps = 15, label_size, label_threshold, test_type ='Bulk')
+    
+    
+    results_scatter <- scatterplot(results = results, group1 = group1, group2 = group2, cluster = cluster, local_figures_path = local_figures_path, FC_threshold = FC_threshold, p_value_threshold = p_value_threshold, max_overlaps = 15, label_size = label_size, label_threshold = label_threshold, distance_from_diagonal_threshold = distance_from_diagonal_threshold, test_type = 'Bulk', ...)
+    
+    volcano_plot(results = results, group1 = group1, group2 = group2, cluster = cluster, local_figures_path = local_figures_path, FC_threshold = FC_threshold, p_value_threshold = p_value_threshold, max_overlaps = 15, label_size = label_size, label_threshold = label_threshold, test_type ='Bulk', ...)
 
     ########## Overrepresentation analysis ##########
     if (run_pathway_enrichment) {
@@ -822,8 +824,8 @@ bulk_analysis <- function (counts_table, comparison = 'Groups', group1, group2, 
             genes_to_plot <- gene_lists_to_plot[[gene_list]]                    
             print(genes_to_plot)
             # Generate scatter and volcano plots
-            results_scatter <- scatterplot(genes_to_plot = genes_to_plot, gene_list_name = gene_list, results, group1, group2, cluster, my_colors, local_figures_path, FC_threshold, p_value_threshold, max_overlaps = 15, label_size, label_threshold, distance_from_diagonal_threshold, test_type = 'Bulk')
-            volcano_plot(genes_to_plot = genes_to_plot, gene_list_name = gene_list, results_scatter, group1, group2, cluster, my_colors, local_figures_path, FC_threshold, p_value_threshold, max_overlaps = 15, label_size, label_threshold, test_type = 'Bulk')
+            results_scatter <- scatterplot(genes_to_plot = genes_to_plot, gene_list_name = gene_list, results = results, group1 = group1, group2 = group2, cluster = cluster, local_figures_path = local_figures_path, FC_threshold = FC_threshold, p_value_threshold = p_value_threshold, max_overlaps = 15, label_size = label_size, label_threshold = label_threshold, distance_from_diagonal_threshold = distance_from_diagonal_threshold, test_type = 'Bulk', ...)
+            volcano_plot(genes_to_plot = genes_to_plot, gene_list_name = gene_list, results = results, group1 = group1, group2 = group2, cluster = cluster, local_figures_path = local_figures_path, FC_threshold = FC_threshold, p_value_threshold = p_value_threshold, max_overlaps = 15, label_size = label_size, label_threshold = label_threshold, test_type ='Bulk', ...)
 
         }
     }   
@@ -1113,7 +1115,7 @@ extract_cell_counts <- function(seurat, grouping_var, figures_path, tables_path,
 #       save_plot(filename = here(figures_path, paste0(englue('frequency_per_{{grouping_var}}_per_sample_tidyplot '), object_annotations, '.pdf')))
      
 }
-calculate_D50 <- function (seurat, cell_grouping_var, replicate_var, replicate_group_var = NULL, results_path, figures_path, tables_path) {
+calculate_D50 <- function (seurat, cell_grouping_var, replicate_var, replicate_group_var = NULL, results_path, figures_path, tables_path, colors  = NULL) {
 
     #Extracting TCR data for clusters of interest
     Idents(seurat) <- englue("{{cell_grouping_var}}")
@@ -1183,7 +1185,7 @@ calculate_D50 <- function (seurat, cell_grouping_var, replicate_var, replicate_g
 
     
 # Add replicate grouping variable information
-    if (!(englue('replicate_var') == englue('{{replicate_group_var}}'))) {
+    if (!(englue('{{replicate_var}}') == englue('{{replicate_group_var}}'))) {
         replicate_grouping_var_info <- seurat@meta.data |> 
             dplyr::select({{replicate_var}}, {{replicate_group_var}})       
         replicate_grouping_var_info <- replicate_grouping_var_info[!duplicated(replicate_grouping_var_info), ]
@@ -1196,20 +1198,24 @@ calculate_D50 <- function (seurat, cell_grouping_var, replicate_var, replicate_g
     results_long <- results_long %>% filter(!is.na(D50))
 
     # Plot: x axis is {{replicate_var}}, show only dots (no columns)
-    plot1 <- ggplot(results_long, aes(x = {{cell_grouping_var}}, y = D50, color = {{replicate_group_var}})) +
-        geom_jitter(position = position_jitterdodge(jitter.width = 0.15, dodge.width = 0.8), show.legend = TRUE) +
-        stat_summary(fun = mean, geom = "bar", position = position_dodge(width = 0.9), aes(fill = {{replicate_group_var}}, alpha = 0.5)) +
+    plot1 <- ggplot(results_long, aes(x = {{replicate_group_var}}, y = D50, color = {{replicate_group_var}})) +
+        geom_beeswarm(size = 3) +
+        stat_summary(fun = mean, geom = "bar", position = position_dodge(width = 0.7), width = 0.5, aes(fill = {{replicate_group_var}}, alpha = 0.5)) +
         stat_summary(fun.data = mean_se, fun.args = list(mult = 1),
-            geom = "errorbar", width = 0.2, position = position_dodge(width = 0.9) ) +
+            geom = "errorbar", width = 0.2, position = position_dodge(width = 0.7)) +
         scale_y_continuous(limits = c(0, 0.5), expand = expansion(mult = c(0, 0.05))) +
         theme_classic() +
-        labs(x = englue("{{replicate_var}}"), y = "D50 Diversity", title = englue("D50 per Group by {{cell_grouping_var}}")) +
+        labs(x = englue("{{replicate_group_var}}"), y = "D50 Diversity", title = englue("D50 per {{replicate_group_var}} by {{cell_grouping_var}}")) +
         guides(alpha = 'none')+
         theme(axis.text.x = element_text(angle = 45, hjust = 1),
             text = element_text(size = 14),
             axis.line = element_line(colour = "black")) 
+    if (!is.null(colors)) {
+        plot1 <- plot1 + scale_color_manual(values = colors) + scale_fill_manual(values = colors)
+    }
     ggsave(plot = plot1, filename = paste0(englue('D50_per_{{cell_grouping_var}}.pdf')), width = length(levels(results_long |> pull({{cell_grouping_var}})))+2, height = 6, path = figures_path)
     print(plot1)
+    return(plot1)
 }
 
 run_cnmf_results <- function (
@@ -1556,4 +1562,56 @@ plot_pathways_heatmap2 <- function(genes_to_plot, seurat, pathway_name, color_pa
         labs(x = NULL, y = NULL, title = pathway_name)
     
     return(plot)
+}
+
+plot_clonal_repertoire <- function(seurat, group_name, figures_path, viridis_option = 'D') {
+  # Prepare repertoire data
+  repertoire <- seurat@meta.data |>
+    filter(Groups == group_name & !is.na(CTaa)) |>
+    arrange(desc(clonalFrequency))
+  
+  # Determine unique clone sizes and generate appropriate number of colors
+  repertoire2 <- repertoire |> arrange(cloneSize)
+  clone_sizes <- unique(repertoire2$cloneSize[!is.na(repertoire$cloneSize)]) |> as.character()
+  n_colors <- length(clone_sizes)
+  viridis_colors <- viridis(n = n_colors, option = viridis_option, direction = -1)
+  print(clone_sizes)
+  
+  # Create color mapping
+  repertoire <- repertoire |>
+    mutate(color = case_when(
+      str_equal(cloneSize, clone_sizes[1]) ~ viridis_colors[1],
+      str_equal(cloneSize, clone_sizes[min(2, n_colors)]) ~ viridis_colors[min(2, n_colors)],
+      str_equal(cloneSize, clone_sizes[min(3, n_colors)]) ~ viridis_colors[min(3, n_colors)],
+      str_equal(cloneSize, clone_sizes[min(4, n_colors)]) ~ viridis_colors[min(4, n_colors)],
+      str_equal(cloneSize, clone_sizes[min(5, n_colors)]) ~ viridis_colors[n_colors],
+      is.na(cloneSize) ~ 'grey90'
+    )) |>
+    select(clonalFrequency, CTaa, color) |>
+    distinct()
+  
+  # Calculate circle packing layout
+  packing <- circleProgressiveLayout(repertoire$clonalFrequency, sizetype = 'area')
+  repertoire <- repertoire |>
+    mutate(x = packing$x,
+           y = packing$y)
+  ggplot_data_circles <- circleLayoutVertices(packing, npoints = 50)
+  
+  # Create plot
+  plot <- ggplot(data = ggplot_data_circles) +
+    geom_polygon(aes(x, y, group = id, fill = factor(id)), 
+                 colour = "black", alpha = 0.7, show.legend = FALSE) +
+    scale_fill_manual(values = repertoire$color, labels = repertoire$cloneSize) +
+    geom_text(data = repertoire,
+              aes(x, y, size = clonalFrequency, label = clonalFrequency)) +
+    guides(fill = guide_legend(), size = "none") +
+    scale_size_continuous(range = c(3, 10)) +
+    labs(title = paste0("Clonal repertoire for group: ", group_name)) +
+    theme_void() +
+    theme(plot.title = element_text(hjust = 0.5, size = 20)) +
+    coord_equal()
+  ggsave(plot = plot, filename = paste0('clonal_repertoire_', group_name, '.pdf'), width = 8, height = 8, path = figures_path)
+
+#print(plot)
+return(plot)
 }

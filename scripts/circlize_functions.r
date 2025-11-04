@@ -290,3 +290,120 @@ overlap_circos_and_tables <- function(
 
     return()
 }
+
+create_V_J_chord_diagram <- function(trbv_j_table, 
+                                        figures_path,
+                                        chain_a = 'TRBV',
+                                        chain_b = 'TRBJ',
+                                        group_name,
+                                        trbv_palette = "Teal",
+                                        trbj_palette = "Emrl",
+                                        link_palette = "YlOrRd",
+                                        cex = 0.7,
+                                        major_ticks = 10) {
+    
+    
+    chain_pair <- paste0(chain_a, '_', chain_b)
+    
+    # Prepare the data
+    trbv_j_processed <- trbv_j_table |>
+        as.data.frame() |>
+        rownames_to_column(var = chain_pair) |>
+        select(c(all_of(chain_pair), all_of(group_name))) |>
+        rename(interaction = all_of(group_name)) |>
+        separate_wider_delim(all_of(chain_pair), delim = '_', names = c(chain_a, chain_b))
+    
+    # Calculate transparency
+    trbv_j_transparency <- trbv_j_processed |>
+        mutate(transparency = (interaction - min(interaction)) / (max(interaction) - min(interaction))) |>
+        mutate(transparency = 1 - transparency * 1.5)
+    
+    # Generate colors
+    trbv_colors <- hcl.colors(length(unique(trbv_j_processed[[chain_a]])), trbv_palette, rev = TRUE)
+    trbj_colors <- hcl.colors(length(unique(trbv_j_processed[[chain_b]])), trbj_palette, rev = TRUE)
+    grid_colors <- c(trbv_colors, trbj_colors)
+    
+    # Create color function for links
+    colored_function <- colorRamp2(range(trbv_j_processed$interaction), hcl_palette = link_palette, reverse = TRUE)
+    
+    pdf(file = here(paste0(chain_pair, '_chord_diagram_', group_name, '.pdf')))
+
+    # Create chord diagram
+    chordDiagram(trbv_j_processed, 
+        grid.col = grid_colors, 
+        col = colored_function, 
+        link.zindex = rank(trbv_j_processed$interaction), 
+        transparency = trbv_j_transparency$transparency,
+        annotationTrack = c("grid", 'axis'),
+        preAllocateTracks = 1)
+    
+    # Add labels to sectors
+    circos.track(track.index = 1,
+        bg.border = NA,
+        panel.fun = function(x, y) {
+            if (CELL_META$cell.width < 365) {
+                circos.text(
+                    CELL_META$xcenter, 
+                    CELL_META$ylim[1] + mm_y(3), 
+                    adj = c(0, 1),
+                    CELL_META$sector.index,
+                    facing = 'clockwise', 
+                    niceFacing = T, 
+                    cex = cex
+                )
+            } else {
+                circos.text(
+                    CELL_META$xcenter, 
+                    CELL_META$ylim[1] + mm_y(6),
+                    CELL_META$sector.index,
+                    facing = 'bending.inside', 
+                    niceFacing = T,
+                    cex = cex + 0.2
+                )
+            }
+        }
+    )
+    
+    title(paste0(chain_a, ' - ', chain_b, ' gene pairings in ', group_name))
+    dev.off()
+    circos.clear()
+
+    # Create chord diagram
+    chordDiagram(trbv_j_processed, 
+        grid.col = grid_colors, 
+        col = colored_function, 
+        link.zindex = rank(trbv_j_processed$interaction), 
+        transparency = trbv_j_transparency$transparency,
+        annotationTrack = c("grid", 'axis'),
+        preAllocateTracks = 1)
+    
+    # Add labels to sectors
+    circos.track(track.index = 1,
+        bg.border = NA,
+        panel.fun = function(x, y) {
+            if (CELL_META$cell.width < 365) {
+                circos.text(
+                    CELL_META$xcenter, 
+                    CELL_META$ylim[1] + mm_y(3), 
+                    adj = c(0, 1),
+                    CELL_META$sector.index,
+                    facing = 'clockwise', 
+                    niceFacing = T, 
+                    cex = cex
+                )
+            } else {
+                circos.text(
+                    CELL_META$xcenter, 
+                    CELL_META$ylim[1] + mm_y(6),
+                    CELL_META$sector.index,
+                    facing = 'bending.inside', 
+                    niceFacing = T,
+                    cex = cex + 0.2
+                )
+            }
+        }
+    )
+    
+    title(paste0(chain_a, ' - ', chain_b, ' gene pairings in ', group_name))
+    circos.clear()
+}
