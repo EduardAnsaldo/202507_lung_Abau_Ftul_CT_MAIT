@@ -83,6 +83,7 @@ scatterplot <- function (results, group1, group2, local_figures_path, FC_thresho
                 max.iter = 10000000,
                 nudge_x = ifelse(results_scatter$diffexpressed == 'UP', -0.4, 1.25),
                 nudge_y = ifelse(results_scatter$diffexpressed == 'UP', 1.25, -0.4),
+                fontface = 'italic',
                 aes(label = genes_to_label_first,segment.size=0.3, segment.alpha=0.4, segment.curvature=0)) +
             geom_text_repel(
                 size=label_size,
@@ -93,6 +94,7 @@ scatterplot <- function (results, group1, group2, local_figures_path, FC_thresho
                 max.iter = 10000000,
                 nudge_x = ifelse(results_scatter$diffexpressed == 'UP', -0.4, 1.25),
                 nudge_y = ifelse(results_scatter$diffexpressed == 'UP', 1.25, -0.4),
+                fontface = 'italic',
                 aes(label = genes_to_label_second, segment.size=0.3, segment.alpha=0.4, segment.curvature=0)) +
             geom_text_repel(
                 size=label_size,
@@ -103,6 +105,7 @@ scatterplot <- function (results, group1, group2, local_figures_path, FC_thresho
                 max.iter = 10000000,
                 nudge_x = ifelse(results_scatter$diffexpressed == 'UP', -0.4, 1.25),
                 nudge_y = ifelse(results_scatter$diffexpressed == 'UP', 1.25, -0.4),
+                fontface = 'italic',
                 aes(label = genes_to_label, segment.size=0.3, segment.alpha=0.4, segment.curvature=0)) +
         scale_colour_manual(values=my_colors)+
         theme(text=element_text(size=20), legend.position="none")+
@@ -212,7 +215,8 @@ volcano_plot <- function (results, group1, group2, cluster, local_figures_path, 
             max.iter = 10000000,
             nudge_x = nudge_x,
             nudge_y = nudge_y,
-            aes(label = genes_to_label_UP,segment.size=0.5, segment.alpha=0.8, segment.curvature=0)) +
+            aes(label = genes_to_label_UP,segment.size=0.5, segment.alpha=0.8, segment.curvature=0),
+            fontface = 'italic') +
         geom_text_repel(
             size=label_size,
             box.padding = 0.35,
@@ -222,9 +226,10 @@ volcano_plot <- function (results, group1, group2, cluster, local_figures_path, 
             max.iter = 10000000,
             nudge_x = -1*nudge_x,
             nudge_y = nudge_y,
+            fontface = 'italic',
             aes(label = genes_to_label_DOWN, segment.size=0.5, segment.alpha=0.8, segment.curvature=0)) +
         scale_colour_manual(values=my_colors)+
-        geom_vline(xintercept=FC_threshold, col="lavenderblush2", linetype=2, size=0.5) +
+        geom_vline(xintercept= FC_threshold, col="lavenderblush2", linetype=2, size=0.5) +
         geom_vline(xintercept=-FC_threshold, col="lavenderblush2", linetype=2, size=0.5) +
         geom_hline(yintercept=-1*log10(p_value_threshold), col="lavenderblush2", linetype=2, size=0.5)+
         theme(text=element_text(size=20), legend.position="none")+
@@ -251,6 +256,7 @@ pseudobulk_de <- function(scRNAseq, comparison, group1, group2, cluster = 'all_c
                           path = './', FC_threshold = 0.3, p_value_threshold = 0.05, 
                           expression_threshold_for_gene_list = 20, minimum_cell_number = 10, 
                           genes_to_exclude = c(), ...) {
+
     
     requireNamespace('DESeq2', quietly = TRUE) || stop('DESeq2 package needed for this function to work. Please install it.', call. = FALSE)
     
@@ -411,6 +417,9 @@ pseudobulk <- function(scRNAseq, comparison, group1, group2, cluster = 'all_clus
     
     local_figures_path <- here(path, 'figures')
     dir.create(local_figures_path, showWarnings = FALSE, recursive = TRUE)
+
+  group1 <- fixed(group1)
+  group2 <- fixed(group2)
     
     # Run core DE analysis
     de_results <- pseudobulk_de(
@@ -987,25 +996,25 @@ top_genes_per_cluster <- function (seurat, n_genes_to_plot = 3, object_annotatio
     #Top10 markers
     seurat.markers %>%
         group_by(cluster) %>%
-        arrange(desc(avg_log2FC)) |>
+        arrange(desc(avg_log2FC), .by_group = TRUE) |>
         slice_head(n = 10) -> top10
 
     #Top25 markers
     seurat.markers %>%
         group_by(cluster) %>%
-        arrange(desc(avg_log2FC)) |>
+        arrange(desc(avg_log2FC), .by_group = TRUE) |>
         slice_head(n = 50) -> top50
 
     #Top100 markers
     seurat.markers %>%
         group_by(cluster) %>%
-        arrange(desc(avg_log2FC)) |>
+        arrange(desc(avg_log2FC), .by_group = TRUE) |>
         slice_head(n = 100) -> top100
 
     #Topn markers
     seurat.markers %>%
         group_by(cluster) %>%
-        arrange(desc(avg_log2FC)) |>
+        arrange(desc(avg_log2FC), .by_group = TRUE) |>
         slice_head(n = n_genes_to_plot) -> topn
     
     # Save the top markers to files
@@ -1199,7 +1208,7 @@ calculate_D50 <- function (seurat, cell_grouping_var, replicate_var, replicate_g
 
     # Plot: x axis is {{replicate_var}}, show only dots (no columns)
     plot1 <- ggplot(results_long, aes(x = {{replicate_group_var}}, y = D50, color = {{replicate_group_var}})) +
-        geom_beeswarm(size = 3) +
+        geom_quasirandom(size = 1.5) +
         stat_summary(fun = mean, geom = "bar", position = position_dodge(width = 0.7), width = 0.5, aes(fill = {{replicate_group_var}}, alpha = 0.5)) +
         stat_summary(fun.data = mean_se, fun.args = list(mult = 1),
             geom = "errorbar", width = 0.2, position = position_dodge(width = 0.7)) +
@@ -1227,7 +1236,8 @@ run_cnmf_results <- function (
     do_cnmf = TRUE,            # whether to run system cnmf command
     sequential_palette = NULL, # palette for FeaturePlot_scCustom
     sequential_palette_dotplot = NULL, # palette for DotPlot_scCustom
-    local_path = here::here('results', 'cNMF', runname),
+    color_palette = NULL, # heatmap color palette
+    output_path = here::here('results', 'cNMF', runname, 'outputs'),
     object_annotations = '',
     top_n = 100,                # top genes per program to extract
     topn_plot = 6,             # top genes used in dotplot
@@ -1241,6 +1251,8 @@ run_cnmf_results <- function (
     requireNamespace("here")
     requireNamespace("ggplot2")
     requireNamespace("Seurat")  
+
+    dir.create(output_path, recursive = TRUE, showWarnings = FALSE)
 
     # 1) optionally run cNMF consensus
     if (isTRUE(do_cnmf)) {
@@ -1296,13 +1308,13 @@ run_cnmf_results <- function (
         p1 <- FeaturePlot_scCustom(seurat, features = colnames(usage_norm), num_columns = 3)
     }
     print(p1)
-    ggsave(plot = p1, filename = paste0('FeaturePlot_cNMF_k_', k_used, '_', object_annotations, '.pdf'), path = local_path, width = 15, height = 10)
+    ggsave(plot = p1, filename = paste0('FeaturePlot_cNMF_k_', k_used, '_', object_annotations, '.pdf'), path = output_path, width = 15, height = 10)
 
 
     signature_violin_plot <- function (signature) {
         plot1 <- VlnPlot(seurat, features = paste0(signature, ''), group.by = 'Groups', pt.size = 0) + labs(title = signature) + NoLegend()
         # print(plot1)
-        ggsave(plot = plot1, filename = paste0('VlnPlot_', k_used, signature, '_by_group_', object_annotations, '.pdf'), path = local_path, width = 5, height = 4)
+        ggsave(plot = plot1, filename = paste0('VlnPlot_', k_used, signature, '_by_group_', object_annotations, '.pdf'), path = output_path, width = 5, height = 4)
         return(plot1)
     }
     plot_list <- map(colnames(usage_norm), signature_violin_plot)
@@ -1311,81 +1323,93 @@ run_cnmf_results <- function (
 
     #### Interpreting Top genes per gene expression program
     
-    # 8) top genes per program
-    get_top_colnames <- function(row, n = top_n) {
-        top_indices <- order(row, decreasing = TRUE)[seq_len(min(n, length(row)))]
-        colnames(spectra_score)[top_indices]
-    }
-    top_colnames <- apply(spectra_score, 1, get_top_colnames)
-    top_colnames <- as.data.frame(top_colnames)
+    # 8) Extracting top_n genes per program
+    top_colnames <- spectra_score |>
+        tibble::rownames_to_column("program") |>
+        tidyr::pivot_longer(-program, names_to = "gene", values_to = "score") |>
+        mutate(program = fct_inseq(program)) |>
+        arrange(program) |>
+        dplyr::group_by(program) |>
+        filter(score > 0) |>
+        dplyr::slice_max(order_by = score, n = top_n, with_ties = FALSE) |>
+        dplyr::arrange(desc(score), .by_group = TRUE) |> 
+        dplyr::select(program, gene) |>
+        dplyr::mutate(rank = dplyr::row_number()) |>
+        ungroup() |>
+        tidyr::pivot_wider(names_from = program, values_from = gene) |>
+        dplyr::select(-rank)
+
+    # spectra_score |>
+    #     tibble::rownames_to_column("program") |>
+    #     tidyr::pivot_longer(-program, names_to = "gene", values_to = "score") |>
+    #     mutate(program = fct_inseq(program)) |>
+    #     arrange(program) |>
+    #     dplyr::group_by(program) |>
+    #     filter(score > 0) |>
+    #     select(program, gene) |>
+    #     summarize(n = n()) |>
+    #     print()
 
 
     #Add gene annotations:
     annotations <- read.csv(here("scripts/annotations.csv"))
     top_colnames_long <- top_colnames |> 
         pivot_longer(everything(), names_to = 'gene_expression_program', values_to = 'gene')  |>
-        mutate(gene_expression_program = factor(gene_expression_program, levels = colnames(top_colnames))) |>
+        mutate(gene_expression_program = fct_inseq(gene_expression_program)) |>
         arrange(gene_expression_program) |>
         left_join(y= unique(annotations[,c('gene_name', 'description')]), by = c('gene' = 'gene_name'))
-    write.table(top_colnames_long,file=here(local_path, paste0('top50_per_gene_program_k_', k_used, ".tsv")), sep="\t",row.names = FALSE)
+    write.table(top_colnames_long,file=here(output_path, paste0('top50_per_gene_program_k_', k_used, ".tsv")), sep="\t",row.names = FALSE)
 
-    # 9) top-n marker dotplot
-    topn <- top_colnames_long %>%
-        dplyr::group_by(gene_expression_program) %>%
-        dplyr::slice_head(n = topn_plot)
-    gene_list_plot <- rev(unique(topn$gene))
-    Seurat::Idents(seurat) <- 'seurat_clusters'
-    if (!is.null(sequential_palette_dotplot)) {
-        p1 <- DotPlot_scCustom(seurat,
-                                         scale = FALSE,
-                                         features = gene_list_plot,
-                                         colors_use = sequential_palette_dotplot,
-                                         flip_axes = TRUE,
-                                         dot.scale = 8,
-                                         dot.min = 0,
-                                         scale.min = 0,
-                                         scale.max = 80,
-                                         x_lab_rotate = TRUE,
-                                         y_lab_rotate = FALSE) +
-            ggplot2::theme(axis.text.x = ggplot2::element_text(size = 14),
-                                         axis.text.y = ggplot2::element_text(size = 14),
-                                         legend.title = ggplot2::element_text(size = 14))
-    } else {
-        p1 <- DotPlot_scCustom(seurat,
-                                         scale = FALSE,
-                                         features = gene_list_plot,
-                                         flip_axes = TRUE,
-                                         dot.scale = 8,
-                                         dot.min = 0,
-                                         scale.min = 0,
-                                         scale.max = 80,
-                                         x_lab_rotate = TRUE,
-                                         y_lab_rotate = FALSE) +
-            ggplot2::theme(axis.text.x = ggplot2::element_text(size = 14),
-                                         axis.text.y = ggplot2::element_text(size = 14),
-                                         legend.title = ggplot2::element_text(size = 14))
-    }
-    print(p1)
+    top_colnames <- top_colnames |>
+        select(levels(top_colnames_long$gene_expression_program))
 
-    # 8.2) Extracting the top genes driving 90% of each program
+        # 8.2) Extracting the top genes per program for heatmap plotting
+    genes_score <- spectra_score |>
+        as.matrix() |> 
+        t() |> 
+        as.data.frame() |>
+        rownames_to_column('gene')  |> 
+        pivot_longer(-gene, names_to = 'GEP', values_to = 'loading')  |>
+        mutate(GEP = fct_inseq(GEP)) |>
+        group_by(GEP) |>
+        # Z-score normalize the loadings within each GEP
+        mutate(loading_zscore = loading) |>
+        arrange(desc(loading_zscore), .by_group = TRUE) #|>
+        # slice_max(order_by = loading_zscore, n = topn_plot, with_ties = FALSE)  
 
-    # genes_score_file <- here('results/cNMF/cNMF_run/cNMF_run.starcat_spectra.k_15.dt_0_1.txt')
-    # genes_score <- utils::read.table(spectra_score_file, sep = "\t", row.names = 1, header = TRUE, check.names = FALSE)
-    # genes_score |> as.matrix() |> t() |> as.data.frame() -> genes_score
-    # genes_score |> rownames_to_column('gene')  |> pivot_longer(-gene, names_to = 'GEP', values_to = 'loading' )  |>
-    # group_by(GEP) |>
-    # arrange(desc(loading)) |>
-    # mutate(cumsum = cumsum(loading),
-    #     total = sum(loading)) |>
-    # filter(cumsum <= total * 0.9) |> 
-    #  ungroup() |>
-    # select(GEP, gene) |>
-    # pivot_wider(names_from = GEP, values_from = gene) -> top_genes_90_percent_per_program
-    # print(head(top_genes_90_percent_per_program))
+    genes_to_plot <- genes_score |>
+        group_by(GEP) |> 
+        slice_max(order_by = loading_zscore, n = topn_plot, with_ties = FALSE) |> 
+        ungroup() |> 
+        distinct(gene) |> 
+        pull(gene)
+
+    genes_score <- genes_score  |> 
+        filter(gene %in% genes_to_plot)  |>
+        mutate(gene = factor(gene, levels = genes_to_plot))
+
+    # Calculate symmetric limits for the color scale based on z-scores
+    max_abs <- max(abs(genes_score$loading_zscore), na.rm = TRUE)
+    heatmap_plot <- ggplot(genes_score, aes(x = gene, y = GEP, fill = loading_zscore)) +
+        geom_tile(linewidth = 0) +
+        scale_fill_gradientn(
+            colors = color_palette, 
+            name = "z-score<br>loading",
+            limits = c(-max_abs, max_abs)
+        ) +
+        theme_minimal() +
+        theme(
+            axis.text.x = element_text(angle = 45, hjust = 1, face = "italic"),
+            axis.text.y = element_text(),
+            plot.title = element_text(hjust = 0.5, size = 14)
+        ) +
+        labs(x = NULL, y = NULL, title = 'Top genes per\nGene Expression Program')
+    print(heatmap_plot)
 
     # 10)  overrepresentation analysis per program
-        local_path_pathway_enrichment <- here(local_path, paste0('pathway_enrichment_k_', k_used))
+        local_path_pathway_enrichment <- here(output_path, paste0('pathway_enrichment_k_', k_used))
         dir.create(local_path_pathway_enrichment, recursive = TRUE, showWarnings = FALSE)
+        over_representation_results <- NULL
         # Run pathway enrichment analysis
     if (!is.null(run_pathway_enrichment)) {
         if ('Metascape' %in% run_pathway_enrichment) {
@@ -1413,12 +1437,11 @@ run_cnmf_results <- function (
             all_genes <- Features(seurat[['RNA']]) |>unique()
             gene_list <- top_colnames |> as.list() |>  map(~ .x[!is.na(.x)])
             over_representation_results <- GO_overrepresentation_analysis_multiple_lists(gene_list, all_genes, local_path_pathway_enrichment, ontology = 'ALL', minGSSize = 5, maxGSSize = 400, filename = '',  drop_levels = F, levels_to_drop = c(), simplify_function = min, simplify_by = 'p.adjust', simplify_terms = F, run_network = F, network_n_terms = 100, nterms_to_plot = 5, font_size = 8, ...)  
-  
-                                                                            
+        }
+    }
 
-    return(list(seurat = seurat, top_colnames_long = top_colnames_long, top_colnames=top_colnames,ORA_results = over_representation_results) )
-}
-    }}
+    return(list(seurat = seurat, top_colnames_long = top_colnames_long, top_colnames=top_colnames,ORA_results = over_representation_results, genes_score_table = genes_score, spectra_score = spectra_score) )
+    }
 
 
 # Dispatcher wrappers for pathway analyses (supports 1..3 methods)
@@ -1505,7 +1528,6 @@ plot_pathways_heatmap <- function(genes_to_plot, seurat, pathway_name, color_pal
         mutate(scaled_expression = scale(expression)[,1]) |>
         ungroup() |>
         mutate(Sample = fct_rev(factor(Sample)))
-    head(data_to_plot) |> print()
 
     # Calculate symmetric limits for the color scale
     max_abs <- max(abs(data_to_plot$scaled_expression), na.rm = TRUE)
@@ -1514,12 +1536,13 @@ plot_pathways_heatmap <- function(genes_to_plot, seurat, pathway_name, color_pal
         geom_tile(color = "grey60", linewidth = 0.3) +
         scale_fill_gradientn(
             colors = color_palette, 
-            name = "z-scored\nexpression",
+            name = "z-score<br>expression",
             limits = c(-max_abs, max_abs)
         ) +
         theme_minimal() +
         theme(
-            axis.text.x = element_text(angle = 45, hjust = 1),
+            axis.text.x = element_text(angle = 45, hjust = 1, face = "italic"),
+            legend.title = element_text(),
             plot.title = element_text(hjust = 0.5, size = 14)
         ) +
         labs(x = NULL, y = NULL, title = pathway_name)

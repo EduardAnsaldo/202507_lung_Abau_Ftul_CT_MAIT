@@ -198,7 +198,7 @@ GO_functional_analysis_cluster_identification <- function (scRNAseq, results, pa
 
     gene_lists <- results %>%
         group_by(cluster) %>%
-        arrange(desc(avg_log2FC)) |>
+        arrange(desc(avg_log2FC), .by_group = TRUE) |>
         slice_head(n = top_gene_number)  |>
         ungroup() |>
         select(cluster, gene)  |>

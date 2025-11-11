@@ -326,7 +326,7 @@ create_V_J_chord_diagram <- function(trbv_j_table,
     # Create color function for links
     colored_function <- colorRamp2(range(trbv_j_processed$interaction), hcl_palette = link_palette, reverse = TRUE)
     
-    pdf(file = here(paste0(chain_pair, '_chord_diagram_', group_name, '.pdf')))
+    pdf(file = here(figures_path, paste0(chain_pair, '_chord_diagram_', group_name, '.pdf')))
 
     # Create chord diagram
     chordDiagram(trbv_j_processed, 
@@ -405,5 +405,7 @@ create_V_J_chord_diagram <- function(trbv_j_table,
     )
     
     title(paste0(chain_a, ' - ', chain_b, ' gene pairings in ', group_name))
+    p1 <- recordPlot()
     circos.clear()
+    return(p1)
 }
