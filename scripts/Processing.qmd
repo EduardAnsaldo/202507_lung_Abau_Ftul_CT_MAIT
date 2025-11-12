@@ -102,10 +102,10 @@ conflicts_prefer(tidyr::expand)
 conflicts_prefer(tidyplots::save_plot)
 
 # Loading custom functions
-source(here('scripts/function_template.r'))
-source(here('scripts/metascape_functions.r'))
-source(here('scripts/circlize_functions.r'))
-source(here('scripts/ClusterProfiler_functions.r'))
+source(here('scripts/support_scripts/function_template.r'))
+source(here('scripts/support_scripts/metascape_functions.r'))
+source(here('scripts/support_scripts/circlize_functions.r'))
+source(here('scripts/support_scripts/ClusterProfiler_functions.r'))
 
 ```
 
@@ -132,9 +132,9 @@ tables_path <- here('results/tables/')
 dir.create(tables_path)
 
 # Loading custom functions
-source(here('scripts/function_template.r'))
-source(here('scripts/metascape_functions.r'))
-source(here('scripts/circlize_functions.r'))
+source(here('scripts/support_scripts/function_template.r'))
+source(here('scripts/support_scripts/metascape_functions.r'))
+source(here('scripts/support_scripts/circlize_functions.r'))
 
 # Setting up color palettes
 diverging_palette <- hcl.colors(n = 20,'Purple-Green',rev = T)

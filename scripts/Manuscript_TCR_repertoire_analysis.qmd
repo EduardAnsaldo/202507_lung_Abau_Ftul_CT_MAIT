@@ -98,9 +98,9 @@ conflicts_prefer(tidyr::expand)
 conflicts_prefer(tidyplots::save_plot)
 
 # Loading custom functions
-source(here('scripts/function_template.r'))
-source(here('scripts/metascape_functions.r'))
-source(here('scripts/circlize_functions.r'))
+source(here('scripts/support_scripts/function_template.r'))
+source(here('scripts/support_scripts/metascape_functions.r'))
+source(here('scripts/support_scripts/circlize_functions.r'))
 
 
 ```
@@ -129,10 +129,10 @@ tables_path <- here('results/tables/')
 dir.create(tables_path)
 
 # Loading custom functions
-source(here('scripts/function_template.r'))
-source(here('scripts/metascape_functions.r'))
-source(here('scripts/circlize_functions.r'))
-source(here('scripts/ClusterProfiler_functions.r'))
+source(here('scripts/support_scripts/function_template.r'))
+source(here('scripts/support_scripts/metascape_functions.r'))
+source(here('scripts/support_scripts/circlize_functions.r'))
+source(here('scripts/support_scripts/ClusterProfiler_functions.r'))
 
 # Setting up color palettes
 diverging_palette <- hcl.colors(n = 20,'Purple-Green',rev = T)
@@ -323,7 +323,7 @@ TRAV_J_table <- percentVJ(seurat,
          exportTable = T)
 
 
-source(here('scripts/circlize_functions.r'))
+source(here('scripts/support_scripts/circlize_functions.r'))
 create_V_J_chord_diagram(TRBV_J_table, figures_path = figures_path,group_name = 'Uninfected')
 create_V_J_chord_diagram(TRBV_J_table, figures_path = figures_path, group_name = 'A. bau')
 create_V_J_chord_diagram(TRBV_J_table, figures_path = figures_path,group_name = 'F. tula')
@@ -337,7 +337,7 @@ create_V_J_chord_diagram(TRBV_J_table, figures_path = figures_path,group_name = 
 ## Diversity analysis: D50 
 
 ```{r}
-source(here('scripts/function_template.r'))
+source(here('scripts/support_scripts/function_template.r'))
 plot <- calculate_D50(seurat, cell_grouping_var = orig.ident, replicate_var = Samples, replicate_group_var = Groups, results_path = results_path, figures_path = figures_path, tables_path = tables_path, colors= group_colors) 
 
 plot + 
@@ -500,7 +500,7 @@ ggsave(filename = paste0('clonotype_size_by_sample_', '.pdf'), path = figures_pa
 ```{r}
 #| fig-cap: "Clonal repertoire representation per group, clonotypes are colored by their classification (Small, Medium, Large, Hyper Expanded as a proportion) on A PER SAMPLE basis, which is why a clonotype with the same number of sequences can have a different classification."
 library( packcircles )
-source(here('scripts/function_template.r'))
+source(here('scripts/support_scripts/function_template.r'))
 # Usage example:
 plot_clonal_repertoire(seurat, 'A. bau', figures_path)
 plot_clonal_repertoire(seurat, 'F. tula', figures_path)
