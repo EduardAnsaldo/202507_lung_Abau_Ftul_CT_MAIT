@@ -103,10 +103,10 @@ conflicts_prefer(tidyr::expand)
 conflicts_prefer(tidyplots::save_plot)
 
 # Loading custom functions
-source(here('scripts/function_template.r'))
-source(here('scripts/metascape_functions.r'))
-source(here('scripts/circlize_functions.r'))
-source(here('scripts/ClusterProfiler_functions.r'))
+source(here('scripts/support_scripts/function_template.r'))
+source(here('scripts/support_scripts/metascape_functions.r'))
+source(here('scripts/support_scripts/circlize_functions.r'))
+source(here('scripts/support_scripts/ClusterProfiler_functions.r'))
 
 ```
 
@@ -135,9 +135,9 @@ dir.create(tables_path)
 pathway_enrichment <- c('ClusterProfiler', 'Metascape')
 
 # Loading custom functions
-source(here('scripts/function_template.r'))
-source(here('scripts/metascape_functions.r'))
-source(here('scripts/circlize_functions.r'))
+source(here('scripts/support_scripts/function_template.r'))
+source(here('scripts/support_scripts/metascape_functions.r'))
+source(here('scripts/support_scripts/circlize_functions.r'))
 
 # Setting up color palettes
 diverging_palette <- hcl.colors(n = 20,'Purple-Green',rev = T)
@@ -184,10 +184,10 @@ extract_cell_counts(seurat, seurat_clusters, figures_path, tables_path, object_a
 #| fig-width: 12
 #| fig-height: 12
 # Loading custom functions
-source(here('scripts/function_template.r'))
-source(here('scripts/metascape_functions.r'))
-source(here('scripts/circlize_functions.r'))
-source(here('scripts/ClusterProfiler_functions.r'))
+source(here('scripts/support_scripts/function_template.r'))
+source(here('scripts/support_scripts/metascape_functions.r'))
+source(here('scripts/support_scripts/circlize_functions.r'))
+source(here('scripts/support_scripts/ClusterProfiler_functions.r'))
 seurat <- PrepSCTFindMarkers(seurat)
 
 results <- top_genes_per_cluster(seurat, n_genes_to_plot=5, object_annotations, tables_path = tables_path, figures_path = figures_path, results_path = results_path, run_pathway_enrichment = pathway_enrichment) 
@@ -353,9 +353,9 @@ seurat <- readRDS(here('data/MAIT_Abau_Ftula_CT_Lungs.rds'))
 #| #| fig-height: 7
 #| layout-ncol: 2
 #| results: hide
-source(here('scripts/metascape_functions.r'))
-source(here('scripts/function_template.r'))
-source(here('scripts/ClusterProfiler_functions.r'))
+source(here('scripts/support_scripts/metascape_functions.r'))
+source(here('scripts/support_scripts/function_template.r'))
+source(here('scripts/support_scripts/ClusterProfiler_functions.r'))
 
 path <- here(results_path, 'DEG_pseudobulk_analysis_Abau_vs_Ftula')
 unlink(path, recursive = T)
@@ -2684,7 +2684,7 @@ plot1 <- ggdraw() +
 ```
 
 ```{r}
-source(here('scripts/circlize_functions.r'))
+source(here('scripts/support_scripts/circlize_functions.r'))
 color_palette <-c(
         "CT"  =  'skyblue1', 
         "Ftula"  =  'salmon1',
