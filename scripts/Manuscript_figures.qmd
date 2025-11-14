@@ -963,7 +963,7 @@ full_object_original$pathways_Abau_Tcelldifferentiation <- plot_pathways_heatmap
 full_object_original$pathways_Abau_Tcelldifferentiation
 
 # wound_repair_terms
-bgenes_to_plot <- GO_results |>
+genes_to_plot <- GO_results |>
     filter(Description %in% wound_repair_terms) |>
     pull(geneID) |>
     str_split(pattern = '/') |>
@@ -1801,6 +1801,7 @@ p1 <- clonotype_size_table |>
     scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
     scale_fill_viridis(discrete = T, na.value = 'grey90', direction = -1)
 VDJ_figures$pack_circles_legend <- p1
+p1
 
      
     
@@ -2165,7 +2166,8 @@ ggsave(plot = figure_S2, filename = 'Figure_S2.svg', path = figures_path, width 
 
 ```{r}
 # Additional VDJ figures
-VDJ_figures$pack_circles_legend <- (p1 + labs(fill = 'Clonotype size')) |> apply_figure_theme(remove_legend=FALSE)  |> get_legend()
+VDJ_figures$pack_circles_legend2 <- (VDJ_figures$pack_circles_legend + labs(fill = 'Clonotype size')) |> apply_figure_theme(remove_legend=FALSE)  |> get_legend()
+
 
 motif_legend <- get_legend(VDJ_figures$TRA_motifs[[1]] |> apply_figure_theme(axis_thickness = axis_thickness, remove_legend=FALSE) + theme(legend.box.margin = margin(0,12,0,3), legend.position = 'right'))
 
@@ -2228,7 +2230,7 @@ row_three <-plot_grid(
         labs(title = '*F. tula* clonal repertoire', caption = 'n = 2630') + 
         theme(plot.title = element_markdown(), plot.caption = element_text(hjust = 0.5)) + 
         NoAxes(),
-    VDJ_figures$pack_circles_legend,
+    VDJ_figures$pack_circles_legend2,
     labels = c('F', '', '', ''),
     label_fontface = 'bold',
     label_fontfamily = 'Arial',
@@ -2239,7 +2241,6 @@ row_three <-plot_grid(
     rel_widths = c(1, 1, 1, 0.4)
 ) 
 row_three
-VDJ_figures$pack_circles_legend
 
 VDJ_figures$pack_circles_Abau
 
