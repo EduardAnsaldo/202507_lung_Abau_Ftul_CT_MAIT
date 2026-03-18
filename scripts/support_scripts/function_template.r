@@ -206,7 +206,7 @@ volcano_plot <- function (results, group1, group2, cluster, local_figures_path, 
         arrange(desc(padj)) |>
         ggplot(aes(x=log2FoldChange, y=log10_pval,  col=diffexpressed)) +
         geom_point(size=pt_size, stroke = 0) +
-        geom_text_repel(
+        geom_label_repel(
             size=label_size,
             box.padding = 0.35,
             show.legend = FALSE,
@@ -215,9 +215,13 @@ volcano_plot <- function (results, group1, group2, cluster, local_figures_path, 
             max.iter = 10000000,
             nudge_x = nudge_x,
             nudge_y = nudge_y,
-            aes(label = genes_to_label_UP,segment.size=0.5, segment.alpha=0.8, segment.curvature=0),
+            fill = 'white',
+            alpha = 0.9,
+            label.r = unit(0.15, "lines"),
+            label.size = 0.25,
+            aes(label = genes_to_label_UP,segment.size=0.35, segment.alpha=0.8, segment.curvature=0, segment.color = 'darkblue'),
             fontface = 'italic') +
-        geom_text_repel(
+        geom_label_repel(
             size=label_size,
             box.padding = 0.35,
             show.legend = FALSE,
@@ -227,7 +231,11 @@ volcano_plot <- function (results, group1, group2, cluster, local_figures_path, 
             nudge_x = -1*nudge_x,
             nudge_y = nudge_y,
             fontface = 'italic',
-            aes(label = genes_to_label_DOWN, segment.size=0.5, segment.alpha=0.8, segment.curvature=0)) +
+            fill = 'white',
+            alpha = 0.9,
+            label.r = unit(0.15, "lines"),
+            label.size = 0.25,
+            aes(label = genes_to_label_DOWN, segment.size=0.35, segment.alpha=0.8, segment.curvature=0, segment.color = 'darkorange4')) +
         scale_colour_manual(values=my_colors)+
         geom_vline(xintercept= FC_threshold, col="lavenderblush2", linetype=2, size=0.5) +
         geom_vline(xintercept=-FC_threshold, col="lavenderblush2", linetype=2, size=0.5) +

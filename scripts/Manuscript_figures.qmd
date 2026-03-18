@@ -63,6 +63,8 @@ library(ggbeeswarm)
 library(tidyplots)
 library(extrafont)
 library(ggtext)
+library(ggpubr)
+library(rstatix)
 
 # Single Cell Analysis Packages
 library(Seurat)
@@ -99,6 +101,7 @@ conflicts_prefer(dplyr::rename)
 conflicts_prefer(base::unname)
 conflicts_prefer(tidyr::expand)
 conflicts_prefer(tidyplots::save_plot)
+conflicts_prefer(cowplot::get_legend)
 
 # Loading custom functions
 source(here('scripts/support_scripts/function_template.r'))
@@ -154,12 +157,13 @@ seurat_original <- readRDS(here('data/MAIT_Abau_Ftula_CT_Lungs.rds'))
 seurat_cell_cycle <- readRDS(here('data/MAIT_Abau_Ftula_CT_Lungs_cell_cycle.rds'))
 seurat_Abau <- readRDS(here('data/MAIT_Abau_Ftula_CT_Lungs_Abau_only.rds'))
 seurat_Ftula <- readRDS(here('data/MAIT_Abau_Ftula_CT_Lungs_Ftula_only.rds'))
-results_path <- here('results', 'Manuscript_figures')
+
+results_path <- here('results', 'Manuscript_figures/')
 dir.create(results_path, recursive = T, showWarnings = F)
 # unlink(results_path, recursive = T)
-figures_path <- here('results/Manuscript_figures/figures/')
+figures_path <- here(results_path, 'figures/')
 dir.create(figures_path, recursive = T, showWarnings = F)
-tables_path <- here('results/Manuscript_figures/tables/')
+tables_path <- here(results_path, 'tables/')
 dir.create(tables_path, recursive = T, showWarnings = F)
 object_annotations <- 'manuscript_figures'
 
@@ -208,10 +212,12 @@ sequential_palette <- hcl.colors(n = 20,'Mako',rev = T)
 diverging_palette_2 <- hcl.colors(n = 20,'RdBu',rev = T)
 # diverging_palette_3 <- hcl.colors(n = 20,'Geyser',rev = F)
 diverging_palette_3 <- diverging_palette_2
+diverging_palette_4 <- colorRampPalette(c('#0072b2', 'white', '#d55e10'))(20)  |> rev()
 
+UMAP_dot_size <- 5.75
 UMAP_dot_size <- 0.4
 rasterize <- F
-raster_dpi <- c(3000, 3000)
+raster_dpi <- c(1000, 1000)
 alpha_exp <- 0.3
 
 full_object_original <- list()
@@ -239,15 +245,16 @@ Uninfected_cell_number <- Cells(seurat |> subset(subset = Groups == 'Uninfected'
 
 # Clusters UMAP plot
 
-full_object_original$DimPlot <- DimPlot(seurat, group.by = 'seurat_clusters', pt.size = UMAP_dot_size, label = F, raster = rasterize) +
+full_object_original$DimPlot <- DimPlot(seurat, group.by = 'seurat_clusters', pt.size = UMAP_dot_size, label = F, raster = rasterize, raster.dpi = raster_dpi) +
      labs(title = 'MAIT cell Leiden clusters', 
         #   subtitle = 'Lung single-cell RNA-seq', 
         #   caption = 'n = 4 Abau, n = 5 Ftula, n = 4 CT',
      x = 'UMAP 1', y = 'UMAP 2')   
 full_object_original$DimPlot <- full_object_original$DimPlot  |> LabelClusters(id = 'seurat_clusters', size = 3, color = 'black', repel = F, fontface = 'bold') 
+full_object_original$DimPlot
 
 # Clusters split by group plot
-full_object_original$DimPlot_groups <- DimPlot(seurat, group.by = 'seurat_clusters', pt.size = UMAP_dot_size, label = F, split.by = 'Groups', raster = rasterize) +
+full_object_original$DimPlot_groups <- DimPlot(seurat, group.by = 'seurat_clusters', pt.size = UMAP_dot_size, label = F, split.by = 'Groups', raster = rasterize, raster.dpi = raster_dpi) +
      labs( x = 'UMAP 1', y = 'UMAP 2', title = NULL)    +
      theme(strip.text = element_text(size = 14, face = 'italic'))
 
@@ -331,7 +338,7 @@ feature_plot <- function (gene) {
     # # Ensure breaks are unique integers
     # breaks <- unique(as.integer(breaks))
     # print(breaks)
-    plot1 <- FeaturePlot_scCustom(seurat, features = gene, colors_use = sequential_palette, pt.size = UMAP_dot_size, alpha_exp = alpha_exp) + 
+    plot1 <- FeaturePlot_scCustom(seurat, features = gene, colors_use = sequential_palette, pt.size = UMAP_dot_size, alpha_exp = alpha_exp, raster=rasterize, raster.dpi = raster_dpi) + 
         labs(title = paste0("*", gene, "*"), x = 'UMAP 1', y = 'UMAP 2') + 
         theme(plot.title = element_text(face = "italic")) 
         # scale_color_continuous(breaks = breaks)
@@ -396,7 +403,7 @@ signature_feature_plot <- function (signature) {
     min_value  <-  min(seurat@meta.data |> pull(paste0(signature, '_scaled')))
     max_value  <-  max(seurat@meta.data |> pull(paste0(signature, '_scaled')))
     cut_off_value <- min(abs(min_value), abs(max_value))
-    plot1 <- FeaturePlot_scCustom(seurat, features = paste0(signature, '_scaled'), colors_use = diverging_palette_3, na_cutoff=NULL, min.cutoff = -1*cut_off_value, max.cutoff = cut_off_value, pt.size = UMAP_dot_size, alpha_exp = alpha_exp) + labs(title = signature, x = 'UMAP 1', y = 'UMAP 2')
+    plot1 <- FeaturePlot_scCustom(seurat, features = paste0(signature, '_scaled'), colors_use = diverging_palette_3, na_cutoff=NULL, min.cutoff = -1*cut_off_value, max.cutoff = cut_off_value, pt.size = UMAP_dot_size, alpha_exp = alpha_exp, raster=rasterize, raster.dpi = raster_dpi) + labs(title = signature, x = 'UMAP 1', y = 'UMAP 2')
     ggsave(plot = plot1, filename = paste0('FeaturePlot_', signature, '_', object_annotations, '.pdf'), path = figures_path, width = 5, height = 5)
     return(plot1)
 }
@@ -432,7 +439,7 @@ Ftula_cell_number <- Cells(seurat_Ftula) |> length()
 Uninfected_cell_number <- Cells(seurat |> subset(subset = Groups == 'Uninfected')) |> length()
 
 # Clusters UMAP plot
-full_object_regressed$DimPlot <- DimPlot(seurat, group.by = 'seurat_clusters', pt.size = UMAP_dot_size, label = F, raster = rasterize) +
+full_object_regressed$DimPlot <- DimPlot(seurat, group.by = 'seurat_clusters', pt.size = UMAP_dot_size, label = F, raster = rasterize, raster.dpi = raster_dpi) +
      labs(title = 'MAIT cell Leiden clusters', 
         #   subtitle = 'Lung single-cell RNA-seq', 
         #   caption = 'n = 4 Abau, n = 5 Ftula, n = 4 CT',
@@ -440,7 +447,7 @@ full_object_regressed$DimPlot <- DimPlot(seurat, group.by = 'seurat_clusters', p
 full_object_regressed$DimPlot <- full_object_regressed$DimPlot  |> LabelClusters(id = 'seurat_clusters', size = 3, color = 'black', repel = F, fontface = 'bold') 
 
 # Clusters split by group plot
-full_object_regressed$DimPlot_groups <- DimPlot(seurat, group.by = 'seurat_clusters', pt.size = UMAP_dot_size, label = F, split.by = 'Groups', raster = rasterize) +
+full_object_regressed$DimPlot_groups <- DimPlot(seurat, group.by = 'seurat_clusters', pt.size = UMAP_dot_size, label = F, split.by = 'Groups', raster = rasterize, raster.dpi = raster_dpi) +
      labs( x = 'UMAP 1', y = 'UMAP 2', title = NULL)   +
      theme(strip.text = element_text(size = 14, face = 'italic'))
 
@@ -784,20 +791,20 @@ full_object_regressed$Milo_figures$pathways_genes
 #Visualize Neighborhoods
 # full_object_regressed$Milo_figures <- list()
 full_object_regressed$Milo_figures[['neighborhood_graph']] <- plotNhoodGraphDA(trajectory_milo, da_results_Abau_vs_Ftula, layout = 'UMAP', alpha = 0.1) + 
-     scale_fill_continuous(palette = diverging_palette_2) +
+     scale_fill_continuous(palette = diverging_palette_4) +
      theme_classic() + 
      labs(title = 'MiloR: *A. bau* vs *F. tula*', fill = 'log2FC<br>(*A. bau*/*F. tula*)', size = 'Neighborhood size', x = 'UMAP 1', y = 'UMAP 2')+ 
      theme(legend.title = element_text()) +
     guides(edge_width = 'none', size = 'none')
-ggsave(plot = full_object_regressed$Milo_figures[['neighborhood_graph']], filename = 'MiloR_Neighborhoods_DA_Abau_vs_Ftula.pdf', path = figures_path, width = 5, height = 5)
+    # theme(plot.title=element_markdown(), legend.title=element_markdown()) 
+ggsave(plot = full_object_regressed$Milo_figures[['neighborhood_graph']], filename = 'MiloR_Neighborhoods_DA_Abau_vs_Ftula.pdf', path = figures_path, width = 3.5, height = 2.4)
 full_object_regressed$Milo_figures[['neighborhood_graph']]
 
 full_object_regressed$Milo_figures[['beeswarm_graph']] <- plotDAbeeswarm(da_results_Abau_vs_Ftula, group.by = 'seurat_clusters', alpha = 0.05)
-da.res <- full_object_regressed$Milo_figures[['beeswarm_graph']]@data
+da.res <- full_object_regressed$Milo_figures[['beeswarm_graph']]@data |> mutate(group_by = fct_inseq(group_by)) |> mutate(group_by = fct_rev(group_by))
 n_groups <- length(levels(da.res$group_by))
 full_object_regressed$Milo_figures[['beeswarm_graph']] <- da.res |> 
     ggplot(aes(pos_x, pos_y, color=logFC_color)) +
-    scale_color_gradient2() +
     guides(color="none") +
     xlab('seurat_clusters') + ylab("Log Fold Change") +
     scale_x_continuous(
@@ -808,10 +815,13 @@ full_object_regressed$Milo_figures[['beeswarm_graph']] <- da.res |>
     coord_flip() +
     theme_bw(base_size=22) +
     theme(strip.text.y =  element_text(angle=0)) +
-    scale_color_continuous(palette = diverging_palette_2) +
+    scale_color_continuous(palette = diverging_palette_4) +
     labs(x = 'Leiden clusters', y = 'log2FC(*A. bau*/*F. tula*)', color = 'log2FC\n(*A. bau*/*F. tula*)') +
     theme(strip.text.y =  element_text(angle=0), axis.title.x = element_text())
 ggsave(plot = full_object_regressed$Milo_figures[['beeswarm_graph']], filename = 'MiloR_Beeswarm_DA_Abau_vs_Ftula.pdf', path = figures_path, width = 7, height = 5)
+full_object_regressed$Milo_figures[['beeswarm_graph']]
+
+
 
 #Visualize Neighborhoods
 full_object_regressed$Milo_figures[['neighborhood_cluster_graph']] <- plotNhoodGroups(trajectory_milo, da_results_Abau_vs_Ftula, layout = 'UMAP', alpha = 0.1) + 
@@ -821,8 +831,10 @@ full_object_regressed$Milo_figures[['neighborhood_cluster_graph']] <- plotNhoodG
     guides(edge_width = 'none', size = 'none')
 ggsave(plot = full_object_regressed$Milo_figures[['neighborhood_cluster_graph']], filename = 'MiloR_Neighborhoods_Clusters_DA_Abau_vs_Ftula.pdf', path = figures_path, width = 5, height = 5)
 
+
 da_results_Abau_vs_Ftula <- da_results_Abau_vs_Ftula |>
-    mutate(NhoodGroup = fct_inseq(NhoodGroup))
+    mutate(NhoodGroup = fct_inseq(NhoodGroup)) |>
+    mutate(NhoodGroup = fct_rev(NhoodGroup)) 
 full_object_regressed$Milo_figures[['beeswarm_graph_neighborhood_cluster']] <- plotDAbeeswarm(da_results_Abau_vs_Ftula, group.by = 'NhoodGroup',  alpha = 0.05)
 da.res <- full_object_regressed$Milo_figures[['beeswarm_graph_neighborhood_cluster']]@data
 n_groups <- length(levels(da.res$group_by))
@@ -842,6 +854,8 @@ full_object_regressed$Milo_figures[['beeswarm_graph_neighborhood_cluster']] <- d
     labs(x = 'Neighborhood clusters', y = 'log2FC(*A. bau*/*F. tula*)', color = 'log2FC\n(*A. bau*/*F. tula*)') +
     theme(strip.text.y =  element_text(angle=0), axis.title.x = element_text()) 
 ggsave(plot = full_object_regressed$Milo_figures[['beeswarm_graph_neighborhood_cluster']], filename = 'MiloR_Beeswarm_NhoodClusters_DA_Abau_vs_Ftula.pdf', path = figures_path, width = 7, height = 5)
+
+
 
 
 # gene_list_plot <- topn |> pull(GeneID) |> unique() |> rev()
@@ -1019,7 +1033,7 @@ seurat <- seurat_Ftula
 Idents(seurat) <- 'seurat_clusters'
 
 # Clusters UMAP plot
-Ftula_object$DimPlot <- DimPlot(seurat, group.by = 'seurat_clusters', pt.size = UMAP_dot_size, label = F, raster = rasterize) +
+Ftula_object$DimPlot <- DimPlot(seurat, group.by = 'seurat_clusters', pt.size = UMAP_dot_size, label = F, raster = rasterize, raster.dpi = raster_dpi) +
      labs(title = 'MAIT cell Leiden clusters', 
         #   subtitle = 'Lung single-cell RNA-seq', 
         #   caption = 'n = 4 Abau, n = 5 Ftula, n = 4 CT',
@@ -1053,7 +1067,7 @@ seurat <- seurat_Abau
 Idents(seurat) <- 'seurat_clusters'
 
 # Clusters UMAP plot
-Abau_object$DimPlot <- DimPlot(seurat, group.by = 'seurat_clusters', pt.size = UMAP_dot_size, label = F, raster = rasterize) +
+Abau_object$DimPlot <- DimPlot(seurat, group.by = 'seurat_clusters', pt.size = UMAP_dot_size, label = F, raster = rasterize, raster.dpi = raster_dpi) +
      labs(title = 'MAIT cell Leiden clusters', 
         #   subtitle = 'Lung single-cell RNA-seq', 
         #   caption = 'n = 4 Abau, n = 5 Ftula, n = 4 CT',
@@ -1211,7 +1225,7 @@ full_object_regressed$cNMF_GEP_violin_plots
 
 # Feature Plots
 feature_plot_GEP <- function (gene) {
-    plot1 <- FeaturePlot(seurat, features = gene, order = T, pt.size = UMAP_dot_size, alpha = 1, min.cutoff = 0, max.cutoff = 1) + labs(title = gene, x = 'UMAP 1', y = 'UMAP 2') +
+    plot1 <- FeaturePlot(seurat, features = gene, order = T, pt.size = UMAP_dot_size, alpha = 1, min.cutoff = 0, max.cutoff = 1, raster=rasterize, raster.dpi = raster_dpi) + labs(title = gene, x = 'UMAP 1', y = 'UMAP 2') +
         # labs(title = str_replace(gene, '\\n', '<br>')) +
         theme(plot.title = element_text(), legend.title = element_text() ) +
         scale_color_gradientn(colors = sequential_palette_dotplot, name = 'GEP<br>usage', breaks = c(0, 0.5, 1), limits = c(0, 1)) +
@@ -1311,17 +1325,137 @@ VDJ_figures$clonalAbundance <-  clonalAbundance(seurat, group.by = 'Groups', sca
 ggsave(plot = VDJ_figures$clonalAbundance, filename = here(figures_path,  paste0('Clonal_Abundance_by_Group', '.pdf')), width = 7, height = 5)
 
 # Comparing CDR3 length between Abau and Ftula
-VDJ_figures$clonalLength_TRA <- clonalLength(seurat, group.by = 'Groups', scale = F, chain = 'TRA') +
+VDJ_figures$clonalLength_TRA <- clonalLength(seurat, group.by = 'Groups', scale = F, chain = 'TRA', exportTable=F) +
     scale_fill_discrete(group_colors) +
     labs(title = 'Clonal length TRA by Group') +
     theme(plot.title = element_text(hjust = 0.5, size = 16))
 ggsave(plot = VDJ_figures$clonalLength_TRA, filename = here(figures_path,  paste0('Clonal_Length_TRA_by_Group', '.pdf')), width = 7, height = 5)
+VDJ_figures$clonalLength_TRA
 
-VDJ_figures$clonalLength_TRB <- clonalLength(seurat, group.by = 'Groups', scale = F, chain = 'TRB') +
+
+
+VDJ_figures$clonalLength_TRA <- clonalLength(seurat, group.by = 'Groups', scale = T, chain = 'TRA', exportTable=T) |>
+    group_by(Groups) |> 
+    count(length) |>
+    summarize(length = length, Count = sum(n), frequency = 100 *n / sum(n)) |>
+    ggplot(aes(x = length, y = frequency, fill = Groups)) +
+    geom_col( position = 'dodge') +
+    scale_fill_discrete(group_colors) +
+    labs(title = 'Clonal length TRA by Group', y = 'Frequency (%)') +
+    theme_classic() +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+    theme(plot.title = element_text(hjust = 0.5, size = 16),
+        text = element_text(family = 'Arial'),
+          axis.text.x = element_text(size = 8),
+          axis.text.y = element_text(size = 8),
+          legend.text = element_text(size = 8),
+            legend.title = element_text(size = 10))
+
+VDJ_figures$clonalLength_TRB <- clonalLength(seurat, group.by = 'Groups', scale = T, chain = 'TRB') +
     scale_fill_discrete(group_colors) +
     labs(title = 'Clonal length TRB by Group') +
     theme(plot.title = element_text(hjust = 0.5, size = 16))
 ggsave(plot = VDJ_figures$clonalLength_TRB, filename = here(figures_path,  paste0('Clonal_Length_TRB_by_Group', '.pdf')), width = 7, height = 5)
+
+
+# TRA length
+
+df <- clonalLength(seurat, group.by = 'Samples', scale = T, chain = 'TRA', exportTable=T) |>
+    mutate(Groups = case_when(
+        str_detect(Samples, 'Uninfected') ~ 'Uninfected',
+        str_detect(Samples, 'A. bau') ~ 'A. bau',
+        str_detect(Samples, 'F. tula') ~ 'F. tula',
+        TRUE ~ 'Other'
+    )) |>
+    group_by(Samples, Groups) |> 
+    count(length) |>
+    summarize(length = length, Groups = Groups, Count = sum(n), frequency = 100 *n / sum(n)) |>
+    mutate(Groups = factor(Groups, levels = c('Uninfected', 'A. bau', 'F. tula')))  |>
+    filter(length %in% c(seq(10, 17))) |>
+    mutate(length = factor(length, levels = c('10', '11', '12', '13', '14', '15', '16', '17')))      
+# Compute pairwise Wilcoxon tests and add significance annotations
+stat_test <- df |> 
+    group_by(length) |> 
+    filter(n() >= 2, all(table(Groups) >= 2)) |>
+    wilcox_test(frequency ~ Groups, comparisons = list(c('A. bau', 'F. tula'), c('Uninfected', 'F. tula'), c('A. bau', 'Uninfected'))) |>
+    adjust_pvalue(method = 'BH') |>    
+    add_significance('p.adj')  |>  
+    add_xy_position(x = 'length', step.increase = 0.04)      
+VDJ_figures$clonalLength_TRA  <-  df |> 
+    group_by(length) |>
+    ungroup() |>
+    ggplot(aes(x = length, y = frequency, fill = Groups, color = Groups)) +
+    geom_jitter(position = position_jitterdodge(jitter.width = 0.15, dodge.width = 0.8), show.legend = TRUE) +
+    stat_summary(fun = mean, geom = "bar", position = position_dodge(width = 0.9), width = 0.5, aes(fill = Groups, alpha = 0.5)) +
+    stat_summary(fun.data = mean_se, fun.args = list(mult = 1),
+        geom = "errorbar", width = 0.2, position = position_dodge(width = 0.9)) + 
+    stat_pvalue_manual(stat_test, label = 'p.adj.signif', hide.ns = FALSE, tip.length = 0.01, label.size = 3) +
+    labs(title = 'Clonal length TRA by Group', y = 'Frequency (%)', x = 'Length') +
+    theme_classic() +
+    scale_fill_discrete(palette = group_colors, 
+                        breaks = c('Uninfected', 'A. bau', 'F. tula')) + 
+    scale_color_discrete(palette = group_colors, 
+                        breaks = c('Uninfected', 'A. bau', 'F. tula')) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0)), limits = c(0, 120), breaks = c(0, 25, 50, 75, 100)) +
+    guides(alpha = 'none') + 
+    theme(plot.title = element_text(hjust = 0.5, size = 16),
+        text = element_text(family = 'Arial'),
+        axis.text.x = element_text(size = 8),
+        axis.text.y = element_text(size = 8),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 10))
+VDJ_figures$clonalLength_TRA
+
+
+# TRB length
+
+df <- clonalLength(seurat, group.by = 'Samples', scale = T, chain = 'TRB', exportTable=T) |>
+    mutate(Groups = case_when(
+        str_detect(Samples, 'Uninfected') ~ 'Uninfected',
+        str_detect(Samples, 'A. bau') ~ 'A. bau',
+        str_detect(Samples, 'F. tula') ~ 'F. tula',
+        TRUE ~ 'Other'
+    )) |>
+    group_by(Samples, Groups) |> 
+    count(length) |>
+    summarize(length = length, Groups = Groups, Count = sum(n), frequency = 100 *n / sum(n)) |>
+    mutate(Groups = factor(Groups, levels = c('Uninfected', 'A. bau', 'F. tula')))  |>
+    filter(length %in% c(seq(10, 18))) |>
+    mutate(length = factor(length, levels = c('10', '11', '12', '13', '14', '15', '16', '17', '18')))      
+# Compute pairwise Wilcoxon tests and add significance annotations
+stat_test <- df |> 
+    group_by(length) |> 
+    filter(n() >= 2, all(table(Groups) >= 2)) |>
+    wilcox_test(frequency ~ Groups, comparisons = list(c('A. bau', 'F. tula'), c('Uninfected', 'F. tula'), c('A. bau', 'Uninfected'))) |>
+    adjust_pvalue(method = 'BH') |>    
+    add_significance('p.adj')  |>  
+    add_xy_position(x = 'length', step.increase = 0.07)      
+VDJ_figures$clonalLength_TRB  <-  df |> 
+    group_by(length) |>
+    ungroup() |>
+    ggplot(aes(x = length, y = frequency, fill = Groups, color = Groups)) +
+    geom_jitter(position = position_jitterdodge(jitter.width = 0.15, dodge.width = 0.8), show.legend = TRUE) +
+    stat_summary(fun = mean, geom = "bar", position = position_dodge(width = 0.9), width = 0.5, aes(fill = Groups, alpha = 0.5)) +
+    stat_summary(fun.data = mean_se, fun.args = list(mult = 1),
+        geom = "errorbar", width = 0.2, position = position_dodge(width = 0.9)) + 
+    stat_pvalue_manual(stat_test, label = 'p.adj.signif', hide.ns = FALSE, tip.length = 0.01, label.size = 3) +
+    labs(title = 'Clonal length TRB by Group', y = 'Frequency (%)', x = 'Length') +
+    theme_classic() +
+    scale_fill_discrete(palette = group_colors, 
+                        breaks = c('Uninfected', 'A. bau', 'F. tula')) + 
+    scale_color_discrete(palette = group_colors, 
+                        breaks = c('Uninfected', 'A. bau', 'F. tula')) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0)), limits = c(0, 110), breaks = c(0, 25, 50, 75, 100)) +
+    guides(alpha = 'none') + 
+    theme(plot.title = element_text(hjust = 0.5, size = 16),
+        text = element_text(family = 'Arial'),
+        axis.text.x = element_text(size = 8),
+        axis.text.y = element_text(size = 8),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 10))
+VDJ_figures$clonalLength_TRB
+
+    
 
 # Comparing clonal space between Abau and Ftula
 VDJ_figures$clonalScatter <- clonalScatter(seurat,  
@@ -1351,8 +1485,10 @@ VDJ_figures$positionalProperty <- positionalProperty(seurat,
                    group.by = 'Groups', 
                    method = 'atchleyFactors') +
     labs(title = 'Positional properties of CDR3-beta by Group') +
+    # scale_color_manual(group_colors, breaks = c('Uninfected', 'A. bau', 'F. tula')) + 
     theme(plot.title = element_text(hjust = 0.5, size = 16))
 ggsave(plot = VDJ_figures$positionalProperty, filename = here(figures_path,  paste0('Positional_properties_CDR3_TRB_by_Group', '.pdf')), width = 7, height = 5)
+VDJ_figures$positionalProperty
 
 # Analyzing V-J gene pairings
 VDJ_figures$percentVJ <- percentVJ(seurat, 
@@ -1388,6 +1524,40 @@ ggsave(plot = VDJ_figures$PCA_TRB_gene_paring, filename = here(figures_path,  pa
 # vizGenes(seurat, x.axis = 'TRAJ', plot = 'barplot')
 
 
+
+```
+
+### Clonotype size distribution and rarefaction curves
+
+```{r}
+
+df <- clonalAbundance(seurat, cloneCall = 'aa', group.by = 'Groups', scale = T, exportTable = T)
+VDJ_figures$clonal_density <- df |> 
+    group_by(Groups) |>
+    mutate(frequency = log10(Abundance / sum(Abundance))) |>
+    ggplot(aes(x = frequency, fill = Groups)) +
+    geom_density(alpha = 0.5) +
+    labs(title = 'Density of clonal abundance by Group', x = 'log10(Clonal abundance)') +
+    theme_classic() +
+    scale_x_continuous(expand = expansion(mult = c(0, 0)), breaks = c(-4, -3, -2, -1), limits = c(-4, -1)) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+    theme(plot.title = element_text(hjust = 0.5, size = 16),
+        text = element_text(family = 'Arial'))    
+VDJ_figures$clonal_density
+
+VDJ_figures$clonalRarefaction <- clonalRarefaction(seurat,
+                group.by = 'Groups',
+                  plot.type = 1,
+                  hill.numbers = 1,
+                  n.boots = 100) +
+    labs(title = 'Clonal rarefaction curves by Group', x = 'Number of cells sampled', y= 'Number of unique clonotypes (richness)') +
+    scale_color_manual(values = group_colors, breaks = c('Uninfected', 'A. bau', 'F. tula')) +
+    scale_fill_manual(values = group_colors, breaks = c('Uninfected', 'A. bau', 'F. tula')) +
+    scale_x_continuous(limits = c(0, 6000)) +
+    guides(linetype = 'none',shape = 'none', fill = 'none') +
+    theme(plot.title = element_text(hjust = 0.5, size = 16))
+VDJ_figures$clonalRarefaction
+guide_legend(VDJ_figures$clonalRarefaction)$elements
 
 ```
 
@@ -1814,6 +1984,7 @@ p1
 
 ```{r}
 
+figures_path <- here('Manuscript_figures_UMAP_rasterized')
 figures_path <- here('Manuscript_figures')
 unlink(figures_path, recursive = T)
 dir.create(figures_path, recursive = T, showWarnings = F)
@@ -1868,7 +2039,7 @@ apply_figure_theme <- function(plot, markdown_elements = NULL, axis_thickness = 
     if (!is.null(markdown_elements)) {                
         for (elem in markdown_elements) {
             theme_figures <- theme_figures +
-              theme(!!as.name(elem) := element_markdown())                                  
+              theme(!!as.name(elem) := element_markdownstop())                                  
             }
         return(plot + theme_figures)
     } else {
@@ -2193,8 +2364,9 @@ motifs_with_legend <- plot_grid(
 
 
 row_left <- plot_grid(
-    (VDJ_figures$clonotype_size_groups2 + labs(fill = 'Clonotype size', title = '')) |> apply_figure_theme( axis_thickness = axis_thickness),
-    (VDJ_figures$positionalProperty + scale_color_manual(values = group_colors) + labs(color = 'Groups', title = 'Positional properties\nof CDR3-beta')) |> apply_figure_theme(axis_thickness = axis_thickness),
+    # (VDJ_figures$clonotype_size_groups2 + labs(fill = 'Clonotype size', title = '')) |> apply_figure_theme( axis_thickness = axis_thickness),
+    (VDJ_figures$clonalRarefaction |> apply_figure_theme( axis_thickness = axis_thickness)),
+    (VDJ_figures$positionalProperty + scale_color_manual(values = group_colors, breaks=c('Uninfected', 'A. bau', 'F. tula')) + labs(color = 'Groups', title = 'Positional properties\nof CDR3-beta')) |> apply_figure_theme(axis_thickness = axis_thickness),
     VDJ_figures$clonalLength_TRA |> apply_figure_theme(axis_thickness = axis_thickness),
     VDJ_figures$clonalLength_TRB |> apply_figure_theme(axis_thickness = axis_thickness),
     ncol = 2,
@@ -2235,10 +2407,10 @@ row_three <-plot_grid(
     label_fontface = 'bold',
     label_fontfamily = 'Arial',
     label_size = 10,
-    ncol = 4,
-    align = 'h',
+    ncol = 1,
+    align = 'v',
     axis = 'bt',
-    rel_widths = c(1, 1, 1, 0.4)
+    rel_heights= c(1, 1, 1, 0.5)
 ) 
 row_three
 
@@ -2254,17 +2426,20 @@ row_one_two <- plot_grid(
 )
 
 figure_S3 <- plot_grid(
-    row_one_two,
+    row_left,
     row_three,
-    ncol = 1,
+    ncol = 2,
     align = 'hv',
     axis = 'tblr',
-    rel_heights = c(1.5, 1)
+    rel_widths = c(2.5, 1)
 )
+
+figure_S3 <- row_left
 figure_S3
 
-ggsave(plot = figure_S3, filename = 'Figure_S3.pdf', path = figures_path, width = 8, height = 8, units = 'in', device = cairo_pdf)
-ggsave(plot = figure_S3, filename = 'Figure_S3.svg', path = figures_path, width = 8, height = 8, units = 'in')
+
+ggsave(plot = figure_S3, filename = 'Figure_S3.pdf', path = figures_path, width = 11, height = 8, units = 'in', device = cairo_pdf)
+ggsave(plot = figure_S3, filename = 'Figure_S3.svg', path = figures_path, width = 11, height = 8, units = 'in')
 ```
 
 ## Figure S4
